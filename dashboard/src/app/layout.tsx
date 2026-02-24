@@ -1,7 +1,13 @@
 import '@mantine/core/styles.css';
 import './globals.css';
 
-import { ColorSchemeScript, MantineProvider } from '@mantine/core';
+import { ColorSchemeScript, MantineProvider, createTheme } from '@mantine/core';
+import { MainLayout } from '@/components/MainLayout';
+
+const theme = createTheme({
+  primaryColor: 'blue',
+  fontFamily: 'Inter, sans-serif',
+});
 
 export const metadata = {
   title: 'Compuzone Scraping Dashboard',
@@ -19,8 +25,10 @@ export default function RootLayout({
         <ColorSchemeScript />
       </head>
       <body>
-        <MantineProvider defaultColorScheme="auto">
-          {children}
+        <MantineProvider theme={theme} defaultColorScheme="auto">
+          <MainLayout>
+            {children}
+          </MainLayout>
         </MantineProvider>
       </body>
     </html>
