@@ -3,23 +3,32 @@ const admin = require('firebase-admin');
 
 // ─────────────────────────────────────────────
 // 1. Firebase Admin SDK 초기화
+//    GitHub Actions에서 private key PEM 디코딩 에러 방지를 위해
+//    전체 서비스 계정 JSON을 하나의 Secret(FIREBASE_SERVICE_ACCOUNT)에 넣는 방식 사용
 // ─────────────────────────────────────────────
 let credential;
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // ★ 권장 방식: 서비스 계정 JSON 통째로 넣기
   const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   credential = admin.credential.cert(sa);
 } else {
+  // 로컬 개발용 폴백 (개별 환경변수)
   credential = admin.credential.cert({
     projectId: process.env.FIREBASE_PROJECT_ID || "compuzone-diy",
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "firebase-adminsdk-fbsvc@compuzone-diy.iam.gserviceaccount.com",
     privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, '\n'),
   });
 }
-if (!admin.apps.length) admin.initializeApp({ credential });
+
+if (!admin.apps.length) {
+  admin.initializeApp({ credential });
+}
 const db = admin.firestore();
 
 // ─────────────────────────────────────────────
 // 2. 브랜드(카테고리) 설정 – 여기에 추가하면 자동으로 수집 대상이 됩니다
+//    ★ 모든 페이지가 동일한 HTML 구조(#recom_search_ul, .reco_price, recom_go)를 사용하므로
+//      스크래핑 로직은 100% 공유됩니다.
 // ─────────────────────────────────────────────
 const BRANDS = [
   {
@@ -28,9 +37,9 @@ const BRANDS = [
     itemsPerPage: 28,
   },
   {
-    id: '아이웍스',
-    listUrl: 'https://www.compuzone.co.kr/product/iworks_list.htm?rtq=',
-    itemsPerPage: 28,
+    id: '추천조립PC',
+    listUrl: 'https://www.compuzone.co.kr/product/recommend_list.htm?rtq=',
+    itemsPerPage: 15,
   },
 ];
 
@@ -60,15 +69,14 @@ async function scrapeListPages(page, brand) {
   });
   await page.waitForTimeout(3000);
 
-  // 총 페이지 수 감지
-  const totalPages = await page.$$eval('div.page_area a.num', (links) => links.length).catch(() => 1);
-  console.log(`  📄 총 ${totalPages || 1}페이지 감지`);
+  // 총 페이지 수 감지 (페이지가 1개뿐이면 페이지 링크가 없을 수 있으므로 기본값 1)
+  const totalPages = await page.$$eval('div.page_area a.num', (links) => links.length).catch(() => 0) || 1;
+  console.log(`  📄 총 ${totalPages}페이지 감지`);
 
   let allProducts = [];
-  const pageCount = totalPages || 1;
 
-  for (let currentPage = 1; currentPage <= pageCount; currentPage++) {
-    console.log(`    📄 ${currentPage}/${pageCount} 페이지 수집 중...`);
+  for (let currentPage = 1; currentPage <= totalPages; currentPage++) {
+    console.log(`    📄 ${currentPage}/${totalPages} 페이지 수집 중...`);
 
     if (currentPage > 1) {
       const offset = (currentPage - 1) * brand.itemsPerPage;
@@ -80,11 +88,16 @@ async function scrapeListPages(page, brand) {
       await page.waitForTimeout(1000);
     }
 
+    // 현재 페이지의 상품 목록 추출
+    // ★ 상세 URL은 <a> href에서 직접 추출 (MediumDivNo, DivNo가 브랜드/상품별로 다르므로)
     const pageProducts = await page.$$eval('#recom_search_ul > li', (elements) => {
       const results = [];
       elements.forEach((el) => {
         const nameEl = el.querySelector('p.name');
         const priceDiv = el.querySelector('.reco_price');
+        // 상세 페이지 링크: <li> 안의 첫 번째 <a> 태그에서 href 추출
+        const linkEl = el.querySelector('a[href*="product_detail"]');
+
         if (nameEl && priceDiv) {
           const name = (nameEl?.innerText || '').trim();
           const pNo = priceDiv?.getAttribute('data-pricetable') || '';
@@ -93,13 +106,29 @@ async function scrapeListPages(page, brand) {
           const originalPrice = Number(rawPrice.replace(/,/g, '')) || 0;
           const discountPrice = Number(rawDiscount.replace(/,/g, '')) || 0;
 
+          // 상세 페이지 URL 조합
+          let detailUrl = '';
+          if (linkEl) {
+            const href = linkEl.getAttribute('href') || '';
+            // 상대 경로 → 절대 경로 변환
+            if (href.startsWith('http')) {
+              detailUrl = href;
+            } else {
+              detailUrl = 'https://www.compuzone.co.kr/product/' + href.replace(/^\.\.\/product\//, '').replace(/^\.\.\//, '');
+            }
+          }
+          // href를 추출하지 못한 경우 ProductNo로 직접 조합 (폴백)
+          if (!detailUrl && pNo) {
+            detailUrl = `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=1&MediumDivNo=1&SearchType=Y`;
+          }
+
           if (pNo) {
             results.push({
               productNo: pNo,
               name,
               originalPrice,
               discountPrice,
-              detailUrl: `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=1&MediumDivNo=1001&SearchType=Y`,
+              detailUrl,
               components: [],
             });
           }
@@ -158,15 +187,21 @@ async function scrapeDetailComponents(page, products, brandId) {
           let partPrice = 0;
           if (priceEl) {
             const prmOri = priceEl.getAttribute('prm_ori');
-            if (prmOri) partPrice = Number(prmOri) || 0;
-            else partPrice = Number((priceEl.innerText || '').replace(/[^0-9]/g, '')) || 0;
+            if (prmOri) {
+              partPrice = Number(prmOri) || 0;
+            } else {
+              const textPrice = (priceEl.innerText || '').replace(/[^0-9]/g, '');
+              partPrice = Number(textPrice) || 0;
+            }
           }
 
           const numEl = row.querySelector('td.num');
           let quantity = 1;
           if (numEl) {
             const prmOriNum = numEl.getAttribute('prm_ori_num');
-            if (prmOriNum) quantity = Number(prmOriNum) || 1;
+            if (prmOriNum) {
+              quantity = Number(prmOriNum) || 1;
+            }
           }
 
           results.push({ type, partName, partPrice, quantity });
@@ -224,7 +259,7 @@ async function saveToFirestore(products, brandId, todayStr) {
 async function trackCompuzone() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   });
   const page = await context.newPage();
   const todayStr = getTodayDateString();
