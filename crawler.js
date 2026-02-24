@@ -1,12 +1,12 @@
 const { chromium } = require('playwright');
 const admin = require('firebase-admin');
 
-// 1. Firebase Admin SDK 연결 (환경 변수 또는 직접 입력)
-// 로컬 테스트 시에는 .env의 값을 불러오거나 여기에 직접 넣습니다.
+// ─────────────────────────────────────────────
+// 1. Firebase Admin SDK 초기화
+// ─────────────────────────────────────────────
 const serviceAccount = {
   projectId: process.env.FIREBASE_PROJECT_ID || "compuzone-diy",
   clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "firebase-adminsdk-fbsvc@compuzone-diy.iam.gserviceaccount.com",
-  // GitHub Actions에서 줄바꿈이 깨지는 것을 방지하기 위한 정규식 처리
   privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, '\n'),
 };
 
@@ -15,34 +15,44 @@ if (!admin.apps.length) {
     credential: admin.credential.cert(serviceAccount)
   });
 }
-
 const db = admin.firestore();
 
-// 2. 오늘 날짜 구하기 (YYYY-MM-DD 포맷)
+// ─────────────────────────────────────────────
+// 2. 한국 시간(KST) 기준 오늘 날짜 생성
+// ─────────────────────────────────────────────
 function getTodayDateString() {
-  const today = new Date();
-  // 한국 시간(KST) 기준으로 안전하게 맞추기 위함
-  const kstOffset = 9 * 60 * 60 * 1000;
-  const kstDate = new Date(today.getTime() + kstOffset);
-
-  const year = kstDate.getUTCFullYear();
-  const month = String(kstDate.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(kstDate.getUTCDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(kst.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
+// ─────────────────────────────────────────────
+// 3. 메인 크롤러 함수
+// ─────────────────────────────────────────────
 async function trackCompuzone() {
-  const browser = await chromium.launch({ headless: true }); // Github Actions 용이므로 headless: true 고정
-  const context = await browser.newContext();
+  // headless: true → GitHub Actions 등 서버 환경에서 필수
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  });
   const page = await context.newPage();
 
   try {
+    // ── [1단계] 메인 리스트 페이지에서 상품 목록 추출 ──
     const mainUrl = 'https://www.compuzone.co.kr/product/compuzone_premium_pc.htm?rtq=';
-    console.log(`[1단계] 메인 페이지 접속 중...`);
-    await page.goto(mainUrl, { waitUntil: 'domcontentloaded' });
+    console.log('[1단계] 메인 리스트 페이지 접속 중...');
+    await page.goto(mainUrl, { waitUntil: 'networkidle', timeout: 30000 });
 
-    // 1단계: 프리미엄 PC 리스트 추출
+    // ★ 핵심: 리스트가 JavaScript로 동적 렌더링되므로 반드시 해당 요소가 나타날 때까지 대기
+    await page.waitForSelector('#recom_search_ul > li', { timeout: 15000 }).catch(() => {
+      console.log('⚠ 리스트 요소를 찾지 못했습니다. 페이지 구조가 변경되었을 수 있습니다.');
+    });
+    // 추가 안전 대기 (동적 렌더링 완료 시간 확보)
+    await page.waitForTimeout(3000);
+
     const products = await page.$$eval('#recom_search_ul > li', (elements) => {
       const results = [];
       elements.forEach((el) => {
@@ -50,80 +60,150 @@ async function trackCompuzone() {
         const priceDiv = el.querySelector('.reco_price');
 
         if (nameEl && priceDiv) {
-          const name = nameEl.innerText.trim();
-          const pNo = priceDiv.getAttribute('data-pricetable');
+          const name = (nameEl?.innerText || '').trim();
+          const pNo = priceDiv?.getAttribute('data-pricetable') || '';
 
-          let originalPrice = 0;
-          let discountPrice = 0;
+          // 방어적 코딩: 가격 문자열에서 쉼표 제거 후 Number 변환
+          const rawPrice = priceDiv?.getAttribute('data-price') || '0';
+          const rawDiscount = priceDiv?.getAttribute('data-discountprice') || '0';
+          const originalPrice = Number(rawPrice.replace(/,/g, '')) || 0;
+          const discountPrice = Number(rawDiscount.replace(/,/g, '')) || 0;
 
-          const rawPrice = priceDiv.getAttribute('data-price');
-          if (rawPrice) originalPrice = Number(rawPrice.replace(/,/g, ''));
-
-          const rawDiscount = priceDiv.getAttribute('data-discountprice');
-          if (rawDiscount) discountPrice = Number(rawDiscount.replace(/,/g, ''));
-
-          results.push({
-            productNo: pNo,
-            name: name,
-            originalPrice: originalPrice,
-            discountPrice: discountPrice,
-            detailUrl: `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}`,
-            components: []
-          });
+          if (pNo) {
+            results.push({
+              productNo: pNo,
+              name: name,
+              originalPrice: originalPrice,
+              discountPrice: discountPrice,
+              detailUrl: `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=1&MediumDivNo=1447&DivNo=4703&SearchType=Y`,
+              components: []
+            });
+          }
         }
       });
       return results;
     });
 
-    console.log(`총 ${products.length}개의 리스트 발견. 2단계 부품 스크래핑 시작...`);
+    console.log(`✅ 총 ${products.length}개의 프리미엄 PC 리스트 발견.`);
+    if (products.length === 0) {
+      console.log('⚠ 상품이 0개입니다. 크롤링을 중단합니다.');
+      await browser.close();
+      return;
+    }
 
-    // 2단계: 개별 상세페이지 추출
+    // ── [2단계] 각 상품의 상세 페이지에서 부품 스크래핑 ──
+    console.log('\n[2단계] 각 PC 상세 페이지로 이동하여 부품 스크래핑을 시작합니다...');
+
     for (let i = 0; i < products.length; i++) {
       const item = products[i];
-      console.log(`[${i + 1}/${products.length}] ${item.name} 추출 중...`);
+      console.log(`  [${i + 1}/${products.length}] ${item.name}`);
 
-      await page.goto(item.detailUrl, { waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('table.table_style_recom', { timeout: 10000 }).catch(() => { });
+      try {
+        await page.goto(item.detailUrl, { waitUntil: 'networkidle', timeout: 30000 });
 
-      const componentList = await page.$$eval('table.table_style_recom tr', rows => {
-        return rows.map(row => {
-          const typeEl = row.querySelector('td.tit');
-          const nameEl = row.querySelector('td.name a') || row.querySelector('td.name');
-          const priceEl = row.querySelector('td.price');
+        // ★ 핵심: 부품 테이블(div.recom_L > table.table_style_recom)이 렌더링될 때까지 대기
+        await page.waitForSelector('div.recom_L table.table_style_recom', { timeout: 15000 }).catch(() => {
+          console.log(`    ⚠ 부품 테이블을 찾지 못했습니다 (${item.productNo})`);
+        });
+        await page.waitForTimeout(2000);
 
-          if (typeEl && nameEl) {
-            const type = typeEl.innerText.trim();
-            const partName = nameEl.innerText.trim();
+        // ★ 핵심 로직: 사용자가 제공한 HTML 구조에 정확히 맞춘 셀렉터
+        const componentList = await page.$$eval('div.recom_L table.table_style_recom tbody tr', (rows) => {
+          const results = [];
+          rows.forEach((row) => {
+            // <th>가 있는 행은 헤더이므로 스킵
+            if (row.querySelector('th')) return;
+
+            const titEl = row.querySelector('td.tit');
+            if (!titEl) return;
+
+            const type = (titEl.innerText || '').trim();
+            // "옵션추가", "MD's 추천", "서비스", "운영체제" 등 선택 사항(옵션)은 스킵
+            if (type.includes('옵션추가') || type.includes('MD') || type === '서비스' || type.includes('운영체제')) return;
+
+            // 부품명 추출: 1) a 태그 직접 링크, 2) 드롭다운(span.txt) 순서로 시도
+            let partName = '';
+            const nameLink = row.querySelector('td.name > a');
+            const nameDropdown = row.querySelector('td.name span.txt');
+
+            if (nameLink) {
+              partName = (nameLink.innerText || '').trim();
+            } else if (nameDropdown) {
+              partName = (nameDropdown.innerText || '').trim();
+              // 드롭다운 텍스트에서 "▶ PC용◀ 1개" 등의 불필요한 접미사 제거
+              partName = partName.replace(/▶.*?◀.*$/g, '').trim();
+            }
+
+            if (!partName) return;
+
+            // 가격 추출: td.price의 prm_ori 속성에서 순수 숫자값을 가져옴 (가장 안전)
+            const priceEl = row.querySelector('td.price');
             let partPrice = 0;
             if (priceEl) {
-              const textPrice = priceEl.innerText.replace(/[^0-9]/g, '');
-              partPrice = Number(textPrice) || 0;
+              const prmOri = priceEl.getAttribute('prm_ori');
+              if (prmOri) {
+                partPrice = Number(prmOri) || 0;
+              } else {
+                // prm_ori가 없으면 텍스트에서 숫자만 추출
+                const textPrice = (priceEl.innerText || '').replace(/[^0-9]/g, '');
+                partPrice = Number(textPrice) || 0;
+              }
             }
-            return { type, partName, partPrice };
-          }
-          return null;
-        }).filter(item => item !== null);
-      }).catch(e => []);
 
-      item.components = componentList;
-      item.updatedAt = admin.firestore.FieldValue.serverTimestamp(); // Firestore 서버 시간 기록
+            // 수량 추출
+            const numEl = row.querySelector('td.num');
+            let quantity = 1;
+            if (numEl) {
+              const prmOriNum = numEl.getAttribute('prm_ori_num');
+              if (prmOriNum) {
+                quantity = Number(prmOriNum) || 1;
+              } else {
+                const numText = (numEl.innerText || '').trim();
+                const parsed = parseInt(numText, 10);
+                if (!isNaN(parsed) && parsed > 0) quantity = parsed;
+              }
+            }
 
-      await page.waitForTimeout(1500);
+            results.push({
+              type: type,
+              partName: partName,
+              partPrice: partPrice,
+              quantity: quantity,
+            });
+          });
+          return results;
+        }).catch((e) => {
+          console.log(`    ❌ 부품 추출 실패: ${e.message}`);
+          return [];
+        });
+
+        item.components = componentList;
+        console.log(`    → ${componentList.length}개 부품 추출 완료`);
+
+      } catch (detailError) {
+        console.log(`    ❌ 상세 페이지 접속 오류 (${item.productNo}): ${detailError.message}`);
+        item.components = [];
+      }
+
+      // 서버 차단 방지용 대기 (2초)
+      await page.waitForTimeout(2000);
     }
 
-    // 3단계: Firebase Firestore에 저장
-    console.log('\n[3단계] Firebase 접속 및 데이터 적재 시작...');
-    const todayStr = getTodayDateString(); // 예: "2026-02-24"
-    const batch = db.batch(); // 대량 쓰기를 위한 batch 연산
+    // ── [3단계] Firebase Firestore에 저장 ──
+    console.log('\n[3단계] Firebase Firestore에 데이터 적재 시작...');
+    const todayStr = getTodayDateString();
+    const batch = db.batch();
 
-    // 구조: compuzone_prices (Collection) > "YYYY-MM-DD" (Document) > products (Subcollection) > "ProductNo" (Document)
+    // 컬렉션 구조: compuzone_prices/{YYYY-MM-DD}/products/{ProductNo}
     for (const item of products) {
-      // 이번 기록의 고유 문서 ID로 ProductNo 사용
       const docRef = db.collection('compuzone_prices').doc(todayStr).collection('products').doc(item.productNo);
-      batch.set(docRef, item, { merge: true }); // 기존에 있으면 덮어쓰고, 없으면 생성 (merge)
+      batch.set(docRef, {
+        ...item,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
     }
 
-    // 추가로, 날짜 리스트만 빠르게 가져올 수 있도록 상위 문서에도 타임스탬프 기록
+    // 날짜 인덱스 문서
     const masterDocRef = db.collection('compuzone_prices').doc(todayStr);
     batch.set(masterDocRef, {
       date: todayStr,
@@ -132,11 +212,19 @@ async function trackCompuzone() {
     }, { merge: true });
 
     await batch.commit();
-    console.log(`✅ [완료] ${todayStr} 일자 ${products.length}개 상품 부품가 및 스펙 DB 저장 전송 성공.`);
+    console.log(`\n✅ [완료] ${todayStr} 일자 / ${products.length}개 상품 / 부품가 및 스펙 DB 저장 성공!`);
+
+    // 디버그용: 첫 번째 상품의 부품 리스트를 요약 출력
+    if (products.length > 0 && (products[0]?.components || []).length > 0) {
+      console.log('\n📋 [샘플 확인] 첫 번째 상품 부품 현황:');
+      (products[0].components || []).forEach((c) => {
+        console.log(`  - [${c.type}] ${c.partName} | ${Number(c.partPrice).toLocaleString()}원 x ${c.quantity}`);
+      });
+    }
 
   } catch (error) {
-    console.error('❌ [Error] 크롤러 실행 중 중대한 에러가 발생했습니다:', error);
-    process.exit(1); // Github Actions가 실패했음을 인지하도록 1로 종료
+    console.error('❌ [치명적 에러] 크롤러 실행 중 문제 발생:', error);
+    process.exit(1);
   } finally {
     await browser.close();
   }
