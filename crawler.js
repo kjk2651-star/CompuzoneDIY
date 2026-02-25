@@ -39,7 +39,7 @@ const BRANDS = [
   {
     id: '추천조립PC',
     listUrl: 'https://www.compuzone.co.kr/product/recommend_list.htm?rtq=',
-    itemsPerPage: 15,
+    itemsPerPage: 28,
   },
   {
     id: '아이웍스',
