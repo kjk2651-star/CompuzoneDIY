@@ -46,9 +46,9 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
                 <Group h="100%" px="md" justify="space-between">
                     <Group>
                         <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-                        <Title order={3} fw={900} variant="gradient" gradient={{ from: 'blue', to: 'cyan' }}>
+                        <Text component="h3" fw={900} size="xl" variant="gradient" gradient={{ from: 'blue', to: 'cyan' }}>
                             Compuzone Tracker
-                        </Title>
+                        </Text>
                     </Group>
 
                     <ActionIcon

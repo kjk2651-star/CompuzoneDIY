@@ -41,6 +41,11 @@ const BRANDS = [
     listUrl: 'https://www.compuzone.co.kr/product/recommend_list.htm?rtq=',
     itemsPerPage: 15,
   },
+  {
+    id: '아이웍스',
+    listUrl: 'https://www.compuzone.co.kr/product/iworks_list.htm',
+    itemsPerPage: 28,
+  },
 ];
 
 // ─────────────────────────────────────────────
@@ -56,6 +61,25 @@ function getTodayDateString() {
 }
 
 // ─────────────────────────────────────────────
+// 3-1. 진행률 Firestore 업데이트
+//      대시보드에서 실시간으로 진행 상태를 폴링할 수 있도록
+//      crawl_status 컬렉션에 진행률을 기록합니다.
+// ─────────────────────────────────────────────
+async function updateProgress(status, percent, detail = '') {
+  try {
+    await db.collection('crawl_status').doc('latest').set({
+      status,      // 'running' | 'done' | 'error'
+      percent,     // 0~100
+      detail,      // 현재 작업 설명
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (e) {
+    // 진행률 업데이트 실패 시에도 크롤링은 계속 진행
+    console.log(`  ⚠ 진행률 업데이트 실패: ${e.message}`);
+  }
+}
+
+// ─────────────────────────────────────────────
 // 4. 리스트 페이지에서 상품 목록 수집 (페이지네이션 포함)
 // ─────────────────────────────────────────────
 async function scrapeListPages(page, brand) {
@@ -63,11 +87,29 @@ async function scrapeListPages(page, brand) {
   console.log(`  📦 [${brand.id}] 리스트 수집 시작`);
   console.log(`${'═'.repeat(60)}`);
 
-  await page.goto(brand.listUrl, { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForSelector('#recom_search_ul > li', { timeout: 15000 }).catch(() => {
-    console.log(`  ⚠ [${brand.id}] 리스트 요소 미발견`);
-  });
+  await page.goto(brand.listUrl, { waitUntil: 'networkidle', timeout: 60000 });
+
+  // ★ 폴백 대기: waitForSelector 실패 시 추가 대기 후 재시도
+  let listFound = false;
+  try {
+    await page.waitForSelector('#recom_search_ul > li', { timeout: 15000 });
+    listFound = true;
+  } catch {
+    console.log(`  ⚠ [${brand.id}] 첫 번째 대기 실패, 5초 추가 대기 후 재시도...`);
+    await page.waitForTimeout(5000);
+    try {
+      await page.waitForSelector('#recom_search_ul > li', { timeout: 10000 });
+      listFound = true;
+    } catch {
+      console.log(`  ❌ [${brand.id}] 리스트 요소 최종 미발견`);
+    }
+  }
   await page.waitForTimeout(3000);
+
+  if (!listFound) {
+    console.log(`  ⚠ [${brand.id}] 상품 리스트를 찾을 수 없습니다. 건너뜁니다.`);
+    return [];
+  }
 
   // 총 페이지 수 감지 (페이지가 1개뿐이면 페이지 링크가 없을 수 있으므로 기본값 1)
   const totalPages = await page.$$eval('div.page_area a.num', (links) => links.length).catch(() => 0) || 1;
@@ -146,14 +188,28 @@ async function scrapeListPages(page, brand) {
 }
 
 // ─────────────────────────────────────────────
-// 5. 상세 페이지 부품 스크래핑 (공통 로직)
+// 5. 상세 페이지 부품 스크래핑 (공통 로직 + 진행률 업데이트)
 // ─────────────────────────────────────────────
-async function scrapeDetailComponents(page, products, brandId) {
+async function scrapeDetailComponents(page, products, brandId, brandIdx, totalBrands) {
   console.log(`  🔧 [${brandId}] 상세 부품 스크래핑 시작 (${products.length}개)...`);
 
   for (let i = 0; i < products.length; i++) {
     const item = products[i];
     console.log(`    [${i + 1}/${products.length}] ${item.name}`);
+
+    // 진행률 계산: 브랜드 단위 진척 + 상품 단위 세부 진척
+    const brandWeight = 100 / totalBrands;
+    const itemProgress = ((i + 1) / products.length) * brandWeight;
+    const overallPercent = Math.round((brandIdx * brandWeight) + itemProgress);
+
+    // 5건마다 Firestore 진행률 업데이트 (너무 빈번한 업데이트 방지)
+    if (i % 5 === 0 || i === products.length - 1) {
+      await updateProgress(
+        'running',
+        Math.min(overallPercent, 99),
+        `[${brandId}] ${i + 1}/${products.length} 상세 수집 중...`
+      );
+    }
 
     try {
       await page.goto(item.detailUrl, { waitUntil: 'networkidle', timeout: 30000 });
@@ -257,6 +313,8 @@ async function saveToFirestore(products, brandId, todayStr) {
 // 7. 메인 실행
 // ─────────────────────────────────────────────
 async function trackCompuzone() {
+  await updateProgress('running', 0, '크롤러 시작 중...');
+
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -265,7 +323,15 @@ async function trackCompuzone() {
   const todayStr = getTodayDateString();
 
   try {
-    for (const brand of BRANDS) {
+    for (let brandIdx = 0; brandIdx < BRANDS.length; brandIdx++) {
+      const brand = BRANDS[brandIdx];
+
+      await updateProgress(
+        'running',
+        Math.round((brandIdx / BRANDS.length) * 100),
+        `[${brand.id}] 리스트 수집 중...`
+      );
+
       // 1단계: 리스트 수집
       const products = await scrapeListPages(page, brand);
       if (products.length === 0) {
@@ -273,8 +339,8 @@ async function trackCompuzone() {
         continue;
       }
 
-      // 2단계: 상세 부품 스크래핑
-      await scrapeDetailComponents(page, products, brand.id);
+      // 2단계: 상세 부품 스크래핑 (진행률 포함)
+      await scrapeDetailComponents(page, products, brand.id, brandIdx, BRANDS.length);
 
       // 3단계: Firestore 저장
       await saveToFirestore(products, brand.id, todayStr);
@@ -290,11 +356,14 @@ async function trackCompuzone() {
       }
     }
 
+    await updateProgress('done', 100, `전체 크롤링 완료 (${todayStr})`);
+
     console.log(`\n${'═'.repeat(60)}`);
     console.log(`  ✅ 전체 크롤링 완료 (${todayStr})`);
     console.log(`${'═'.repeat(60)}`);
 
   } catch (error) {
+    await updateProgress('error', 0, `오류 발생: ${error.message}`);
     console.error('❌ [치명적 에러]:', error);
     process.exit(1);
   } finally {
