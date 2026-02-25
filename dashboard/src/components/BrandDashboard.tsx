@@ -7,7 +7,7 @@ import {
     NumberFormatter, Progress
 } from '@mantine/core';
 import {
-    IconExternalLink, IconSearch, IconRefresh, IconChartLine,
+    IconExternalLink, IconSearch, IconChartLine,
     IconChartPie, IconDownload
 } from '@tabler/icons-react';
 import { useProducts } from '@/hooks/useProducts';
@@ -44,10 +44,6 @@ export function BrandDashboard({ brandId, brandLabel }: BrandDashboardProps) {
     const [modalOpened, setModalOpened] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<ParsedProduct | null>(null);
 
-    // 수동 크롤링 상태
-    const [crawling, setCrawling] = useState(false);
-    const [crawlResult, setCrawlResult] = useState<string | null>(null);
-
     // 원본 데이터 파싱
     const parsedProducts = useMemo(() => {
         return rawProducts.map((p) => parseProduct(p));
@@ -76,25 +72,6 @@ export function BrandDashboard({ brandId, brandLabel }: BrandDashboardProps) {
     const handleRowClick = (product: ParsedProduct) => {
         setSelectedProduct(product);
         setModalOpened(true);
-    };
-
-    // 수동 크롤링 실행
-    const handleManualCrawl = async () => {
-        setCrawling(true);
-        setCrawlResult(null);
-        try {
-            const res = await fetch('/api/crawl', { method: 'POST' });
-            const data = await res.json();
-            if (res.ok) {
-                setCrawlResult('✅ 크롤링이 시작되었습니다. 아래 진행률을 확인하세요.');
-            } else {
-                setCrawlResult(`❌ 오류: ${data?.error || '알 수 없는 오류'}`);
-            }
-        } catch (e: any) {
-            setCrawlResult(`❌ 요청 실패: ${e?.message || '네트워크 오류'}`);
-        } finally {
-            setCrawling(false);
-        }
     };
 
     // 엑셀 다운로드
@@ -173,25 +150,8 @@ export function BrandDashboard({ brandId, brandLabel }: BrandDashboardProps) {
                                 }}
                                 disabled={datesLoading}
                             />
-
-                            <Tooltip label="즉시 크롤링 실행">
-                                <Button
-                                    variant="white"
-                                    color="blue"
-                                    size="sm"
-                                    leftSection={<IconRefresh size={16} />}
-                                    onClick={handleManualCrawl}
-                                    loading={crawling}
-                                >
-                                    수동 수집
-                                </Button>
-                            </Tooltip>
                         </Group>
                     </Group>
-
-                    {crawlResult && (
-                        <Text size="xs" mt="xs" opacity={0.9}>{crawlResult}</Text>
-                    )}
 
                     {/* 크롤링 진행률 표시 */}
                     {crawlStatus.status === 'running' && (
