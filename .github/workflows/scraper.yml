@@ -28,4 +28,6 @@ jobs:
       - name: Run Scraper
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          COMPUZONE_ID: ${{ secrets.COMPUZONE_ID }}
+          COMPUZONE_PW: ${{ secrets.COMPUZONE_PW }}
         run: node crawler.js
