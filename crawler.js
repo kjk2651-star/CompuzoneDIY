@@ -158,53 +158,29 @@ async function extractProductsOnPage(page, mediumDivNo) {
       const nameEl = item.querySelector('.prd_info_name');
       const name = nameEl ? nameEl.innerText.trim() : '';
 
-      // 가격 추출 (1순위: data 속성, 2순위: 텍스트 엘리먼트, 3순위: 텍스트 패턴)
-      const priceDiv = item.querySelector('[data-price]') || item.querySelector('[data-ori-price]');
+      // 가격 추출: data-customprice(혜택가/맞춤가) > data-price(판매가)
+      const priceDiv = item.querySelector('[data-customprice]') || item.querySelector('[data-price]');
       let originalPrice = 0;
+      let discountPrice = 0;
+
       if (priceDiv) {
-        const dataPrice = priceDiv.getAttribute('data-price') || priceDiv.getAttribute('data-ori-price') || '0';
-        originalPrice = Number(dataPrice.replace(/[^0-9]/g, '')) || 0;
-      }
-      if (originalPrice === 0) {
-        const priceEl = item.querySelector('strong.number')
-          || item.querySelector('span.number')
-          || item.querySelector('.price_num strong')
-          || item.querySelector('.prd_price strong')
-          || item.querySelector('[class*="price"] strong')
-          || item.querySelector('[class*="price"] em');
-        originalPrice = Number((priceEl ? priceEl.innerText : '').replace(/[^0-9]/g, '')) || 0;
-      }
-      // 최후 폴백: innerText 전체에서 "원" 앞 숫자 (1만원 이상)
-      if (originalPrice === 0) {
-        const allText = item.innerText || '';
-        const priceMatches = allText.match(/([\d,]{5,})\s*원/g);
-        if (priceMatches) {
-          const candidates = priceMatches
-            .map(m => Number(m.replace(/[^0-9]/g, '')))
-            .filter(n => n >= 10000);
-          if (candidates.length > 0) originalPrice = Math.min(...candidates);
+        // 혜택가(맞춤가): data-customprice 우선
+        const customPrice = Number((priceDiv.getAttribute('data-customprice') || '0').replace(/[^0-9]/g, '')) || 0;
+        // 판매가: data-price
+        const sellPrice = Number((priceDiv.getAttribute('data-price') || '0').replace(/[^0-9]/g, '')) || 0;
+
+        if (customPrice > 0) {
+          discountPrice = customPrice; // 혜택가 = 맞춤가
+          originalPrice = sellPrice || customPrice; // 판매가
+        } else {
+          originalPrice = sellPrice;
         }
       }
 
-      // 혜택가(할인가) 추출
-      // 1순위: .custom_price_inner .txt.co_red (컴퓨존 혜택가 전용 구조)
-      // layer_pop 안의 중복 숫자를 피하기 위해 텍스트 노드만 직접 추출
-      let discountPrice = 0;
-      const customPriceEl = item.querySelector('.custom_price_inner .txt.co_red, .custom_price .txt.co_red');
-      if (customPriceEl) {
-        const textNode = Array.from(customPriceEl.childNodes)
-          .filter(n => n.nodeType === Node.TEXT_NODE)
-          .map(n => n.textContent || '')
-          .join('');
-        discountPrice = Number(textNode.replace(/[^0-9]/g, '')) || 0;
-      }
-      if (discountPrice === 0) {
-        const benefitEl = item.querySelector('.bnf_price strong, .benefit_price strong, .sale_price strong');
-        if (benefitEl) discountPrice = Number(benefitEl.innerText.replace(/[^0-9]/g, '')) || 0;
-      }
-      if (discountPrice === 0 && priceDiv) {
-        const dataDiscount = priceDiv.getAttribute('data-discountprice') || '0';
-        discountPrice = Number(dataDiscount.replace(/[^0-9]/g, '')) || 0;
+      // data 속성이 없을 경우 strong.number 폴백
+      if (originalPrice === 0 && discountPrice === 0) {
+        const priceEl = item.querySelector('strong.number');
+        originalPrice = Number((priceEl ? priceEl.innerText : '').replace(/[^0-9]/g, '')) || 0;
       }
       if (discountPrice === 0) {
         const allText = item.innerText || '';
