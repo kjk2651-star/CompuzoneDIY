@@ -278,6 +278,12 @@ async function scrapeProductListPages(page, brand) {
       await page.waitForTimeout(1000);
     }
 
+    // 혜택가(.custom_price_inner)가 로그인 후 AJAX로 렌더링될 때까지 대기
+    await page.waitForSelector('.custom_price_inner', { timeout: 8000 }).catch(() => {
+      console.log(`    ⚠ 혜택가 요소 미감지 – 로그인 상태 또는 페이지 구조 확인 필요`);
+    });
+    await page.waitForTimeout(1000);
+
     // 스크롤로 현재 페이지 상품 모두 로드 (lazy load 대비)
     for (let i = 0; i < 4; i++) {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
