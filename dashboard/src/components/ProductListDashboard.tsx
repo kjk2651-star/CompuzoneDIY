@@ -189,18 +189,19 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                             <Table striped highlightOnHover withTableBorder withColumnBorders fz="xs">
                                 <Table.Thead>
                                     <Table.Tr>
-                                        <Table.Th style={{ width: modelNameWidth, position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 1, paddingRight: 0 }}>
+                                        <Table.Th style={{ width: modelNameWidth, minWidth: modelNameWidth, maxWidth: modelNameWidth, position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 1, paddingRight: 0, overflow: 'hidden' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                 <span>모델명</span>
                                                 <div
                                                     onMouseDown={handleResizeMouseDown}
                                                     style={{
-                                                        width: '4px',
-                                                        height: '20px',
+                                                        width: '8px',
+                                                        height: '100%',
+                                                        minHeight: '24px',
                                                         cursor: 'col-resize',
                                                         userSelect: 'none',
-                                                        backgroundColor: '#ccc',
-                                                        marginLeft: '4px',
+                                                        backgroundColor: '#aaa',
+                                                        flexShrink: 0,
                                                     }}
                                                 />
                                             </div>
@@ -220,9 +221,9 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                                             style={{ cursor: 'pointer' }}
                                             onClick={() => handleRowClick(row)}
                                         >
-                                            <Table.Td style={{ position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 1 }}>
+                                            <Table.Td style={{ position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 1, width: modelNameWidth, minWidth: modelNameWidth, maxWidth: modelNameWidth, overflow: 'hidden' }}>
                                                 <Tooltip label={row.name} multiline w={400}>
-                                                    <Text size="xs" fw={600} lineClamp={1}>{row.name}</Text>
+                                                    <Text size="xs" fw={600} lineClamp={1} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</Text>
                                                 </Tooltip>
                                             </Table.Td>
                                             {recentDates.map((d, idx) => {
