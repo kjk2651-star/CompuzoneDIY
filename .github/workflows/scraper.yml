@@ -5,6 +5,12 @@ on:
     # 매일 한국시간 자정 (UTC 15:00)
     - cron: '0 15 * * *'
   workflow_dispatch: # 수동 실행 버튼
+    inputs:
+      brand:
+        description: '특정 브랜드만 크롤링 (비우면 전체)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   scrape-and-save:
@@ -30,4 +36,5 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           COMPUZONE_ID: ${{ secrets.COMPUZONE_ID }}
           COMPUZONE_PW: ${{ secrets.COMPUZONE_PW }}
+          CRAWL_BRAND: ${{ github.event.inputs.brand }}
         run: node crawler.js

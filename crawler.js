@@ -144,85 +144,29 @@ async function loginToCompuzone(page) {
 }
 
 // ─────────────────────────────────────────────
-// 4-1. 일반 부품 리스트 수집 (무한 스크롤 방식)
-//      product_list.htm 페이지용 – 로그인 후 사용
+// 4-1. 일반 부품 리스트 수집 (페이지네이션 방식)
+//      product_list.htm 페이지용 – GotoPage() JS 함수 호출로 페이지 이동
 // ─────────────────────────────────────────────
-async function scrapeProductListPages(page, brand) {
-  console.log(`\n${'═'.repeat(60)}`);
-  console.log(`  📦 [${brand.id}] 부품 리스트 수집 시작 (무한 스크롤)`);
-  console.log(`${'═'.repeat(60)}`);
 
-  await page.goto(brand.listUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForTimeout(3000);
-
-  // 리스트 로드 대기
-  try {
-    await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 });
-  } catch {
-    console.log(`  ⚠ [${brand.id}] 상품 리스트 미발견. 건너뜁니다.`);
-    return [];
-  }
-
-  // 총 상품 수 추출 (h2 텍스트에서: "그래픽카드 (725)")
-  const totalCountText = await page.$eval('h2', (el) => el.innerText).catch(() => '');
-  const totalMatch = totalCountText.match(/\((\d[\d,]*)\)/);
-  const expectedTotal = totalMatch ? Number(totalMatch[1].replace(/,/g, '')) : 0;
-  console.log(`  📊 총 상품 수: ${expectedTotal || '확인 불가'}`);
-
-  // 무한 스크롤로 모든 상품 로드
-  let previousCount = 0;
-  let noChangeCount = 0;
-  const MAX_NO_CHANGE = 5; // 5회 연속 변화 없으면 종료
-
-  while (true) {
-    const currentCount = await page.$$eval('ul#product_list_ul > li.li-obj', (items) => items.length);
-
-    if (currentCount === previousCount) {
-      noChangeCount++;
-      if (noChangeCount >= MAX_NO_CHANGE) {
-        console.log(`  📄 스크롤 종료 – ${MAX_NO_CHANGE}회 연속 변화 없음 (총 ${currentCount}개)`);
-        break;
-      }
-    } else {
-      noChangeCount = 0;
-      console.log(`    📄 현재 ${currentCount}개 로드됨${expectedTotal ? ` / ${expectedTotal}` : ''}...`);
-    }
-
-    // 예상 총 수에 도달하면 종료
-    if (expectedTotal > 0 && currentCount >= expectedTotal) {
-      console.log(`  📄 전체 ${currentCount}개 로드 완료!`);
-      break;
-    }
-
-    previousCount = currentCount;
-
-    // 페이지 최하단으로 스크롤
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
-  }
-
-  // 모든 상품 데이터 추출
-  const allProducts = await page.$$eval('ul#product_list_ul > li.li-obj', (items) => {
+// 현재 페이지에 표시된 상품 추출 헬퍼
+async function extractProductsOnPage(page, mediumDivNo) {
+  return await page.$$eval('ul#product_list_ul > li.li-obj', (items, divNo) => {
     return items.map((item) => {
       const pNo = (item.id || '').replace('li-pno-', '');
       if (!pNo) return null;
 
-      // 상품명: .prd_info_name
       const nameEl = item.querySelector('.prd_info_name');
       const name = nameEl ? nameEl.innerText.trim() : '';
 
-      // 가격: strong.number (정가)
       const priceEl = item.querySelector('strong.number');
       const rawPrice = priceEl ? priceEl.innerText.replace(/[^0-9]/g, '') : '0';
       const originalPrice = Number(rawPrice) || 0;
 
-      // 혜택가 (할인가): .bnf_price 또는 텍스트에서 추출
       let discountPrice = 0;
       const benefitEl = item.querySelector('.bnf_price strong, .benefit_price strong');
       if (benefitEl) {
         discountPrice = Number(benefitEl.innerText.replace(/[^0-9]/g, '')) || 0;
       } else {
-        // 텍스트에서 "혜택가" 패턴 찾기
         const allText = item.innerText || '';
         const benefitMatch = allText.match(/혜택가[\s:]*?([\d,]+)\s*원/);
         if (benefitMatch) {
@@ -230,36 +174,91 @@ async function scrapeProductListPages(page, brand) {
         }
       }
 
-      // 상세 URL
       const linkEl = item.querySelector('a[href*="product_detail"]');
       let detailUrl = '';
       if (linkEl) {
         const href = linkEl.getAttribute('href') || '';
-        if (href.startsWith('http')) {
-          detailUrl = href;
-        } else {
-          detailUrl = 'https://www.compuzone.co.kr/product/' + href.replace(/^\.\.\/product\//, '').replace(/^\.\.\//, '');
-        }
+        detailUrl = href.startsWith('http')
+          ? href
+          : 'https://www.compuzone.co.kr/product/' + href.replace(/^\.\.\/product\//, '').replace(/^\.\.\//, '');
       }
       if (!detailUrl && pNo) {
-        detailUrl = `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=4&MediumDivNo=1&SearchType=Y`;
+        detailUrl = `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=4&MediumDivNo=${divNo}&SearchType=Y`;
       }
 
-      // 스펙 텍스트 (부품 리스트이므로 components 대신 스펙 텍스트 저장)
       const specEl = item.querySelector('.prd_subTxt, .prd_spec, .spec_txt');
       const specText = specEl ? specEl.innerText.trim() : '';
 
-      return {
-        productNo: pNo,
-        name,
-        originalPrice,
-        discountPrice,
-        detailUrl,
-        specText,
-        components: [],
-      };
+      return { productNo: pNo, name, originalPrice, discountPrice, detailUrl, specText, components: [] };
     }).filter(Boolean);
-  });
+  }, mediumDivNo);
+}
+
+async function scrapeProductListPages(page, brand) {
+  const ITEMS_PER_PAGE = 60;
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log(`  📦 [${brand.id}] 부품 리스트 수집 시작 (페이지네이션)`);
+  console.log(`${'═'.repeat(60)}`);
+
+  await page.goto(brand.listUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForTimeout(3000);
+
+  try {
+    await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 });
+  } catch {
+    console.log(`  ⚠ [${brand.id}] 상품 리스트 미발견. 건너뜁니다.`);
+    return [];
+  }
+
+  // 총 상품 수 추출 (h2 텍스트: "그래픽카드 (725)")
+  const totalCountText = await page.$eval('h2', (el) => el.innerText).catch(() => '');
+  const totalMatch = totalCountText.match(/\((\d[\d,]*)\)/);
+  const expectedTotal = totalMatch ? Number(totalMatch[1].replace(/,/g, '')) : 0;
+  const totalPages = expectedTotal > 0 ? Math.ceil(expectedTotal / ITEMS_PER_PAGE) : 1;
+  console.log(`  📊 총 상품 수: ${expectedTotal || '확인 불가'}, 총 페이지: ${totalPages}`);
+
+  // MediumDivNo 추출 (URL에서)
+  const mediumDivMatch = brand.listUrl.match(/MediumDivNo=(\d+)/);
+  const mediumDivNo = mediumDivMatch ? mediumDivMatch[1] : '1';
+
+  let allProducts = [];
+  const seenNos = new Set();
+
+  for (let pg = 1; pg <= totalPages; pg++) {
+    console.log(`    📄 ${pg}/${totalPages} 페이지 수집 중...`);
+
+    if (pg > 1) {
+      const offset = (pg - 1) * ITEMS_PER_PAGE;
+      await page.evaluate(({ pageNum, os }) => {
+        if (typeof GotoPage === 'function') GotoPage(document.global_form, pageNum, os);
+      }, { pageNum: pg, os: offset });
+
+      // 페이지 이동 후 상품 리스트 갱신 대기
+      await page.waitForTimeout(2000);
+      await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(1000);
+    }
+
+    // 스크롤로 현재 페이지 상품 모두 로드 (lazy load 대비)
+    for (let i = 0; i < 4; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1000);
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(500);
+
+    const pageProducts = await extractProductsOnPage(page, mediumDivNo);
+    let newCount = 0;
+    for (const p of pageProducts) {
+      if (!seenNos.has(p.productNo)) {
+        seenNos.add(p.productNo);
+        allProducts.push(p);
+        newCount++;
+      }
+    }
+    console.log(`    ✅ ${pageProducts.length}개 추출 (신규: ${newCount}개, 누계: ${allProducts.length}개)`);
+  }
 
   console.log(`  🏁 [${brand.id}] 전체 ${allProducts.length}개 상품 수집 완료\n`);
   return allProducts;
@@ -499,7 +498,19 @@ async function saveToFirestore(products, brandId, todayStr) {
 // 7. 메인 실행
 // ─────────────────────────────────────────────
 async function trackCompuzone() {
-  await updateProgress('running', 0, '크롤러 시작 중...');
+  // 특정 브랜드만 크롤링하는 옵션 (환경변수 CRAWL_BRAND)
+  const targetBrand = (process.env.CRAWL_BRAND || '').trim();
+  const activeBrands = targetBrand
+    ? BRANDS.filter((b) => b.id === targetBrand)
+    : BRANDS;
+
+  if (targetBrand && activeBrands.length === 0) {
+    console.log(`❌ 브랜드 "${targetBrand}"를 찾을 수 없습니다. 가능한 값: ${BRANDS.map(b => b.id).join(', ')}`);
+    process.exit(1);
+  }
+
+  const modeLabel = targetBrand ? `[${targetBrand}] 단일 크롤링` : '전체 크롤링';
+  await updateProgress('running', 0, `${modeLabel} 시작 중...`);
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -510,7 +521,7 @@ async function trackCompuzone() {
 
   try {
     // 로그인이 필요한 브랜드가 있는지 확인하고 미리 로그인
-    const needsLogin = BRANDS.some((b) => b.requiresLogin);
+    const needsLogin = activeBrands.some((b) => b.requiresLogin);
     if (needsLogin) {
       await updateProgress('running', 0, '컴퓨존 로그인 중...');
       const loginOk = await loginToCompuzone(page);
@@ -519,8 +530,8 @@ async function trackCompuzone() {
       }
     }
 
-    for (let brandIdx = 0; brandIdx < BRANDS.length; brandIdx++) {
-      const brand = BRANDS[brandIdx];
+    for (let brandIdx = 0; brandIdx < activeBrands.length; brandIdx++) {
+      const brand = activeBrands[brandIdx];
 
       // 로그인 필요한데 로그인 안 된 경우 건너뛰기
       if (brand.requiresLogin && !isLoggedIn) {
@@ -530,7 +541,7 @@ async function trackCompuzone() {
 
       await updateProgress(
         'running',
-        Math.round((brandIdx / BRANDS.length) * 100),
+        Math.round((brandIdx / activeBrands.length) * 100),
         `[${brand.id}] 리스트 수집 중...`
       );
 
@@ -549,7 +560,7 @@ async function trackCompuzone() {
 
       // 2단계: 상세 부품 스크래핑 (recom 타입만 – 부품 리스트는 개별 상품이므로 불필요)
       if (brand.type !== 'product_list') {
-        await scrapeDetailComponents(page, products, brand.id, brandIdx, BRANDS.length);
+        await scrapeDetailComponents(page, products, brand.id, brandIdx, activeBrands.length);
       }
 
       // 3단계: Firestore 저장
@@ -568,10 +579,10 @@ async function trackCompuzone() {
       }
     }
 
-    await updateProgress('done', 100, `전체 크롤링 완료 (${todayStr})`);
+    await updateProgress('done', 100, `${modeLabel} 완료 (${todayStr})`);
 
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`  ✅ 전체 크롤링 완료 (${todayStr})`);
+    console.log(`  ✅ ${modeLabel} 완료 (${todayStr})`);
     console.log(`${'═'.repeat(60)}`);
 
   } catch (error) {

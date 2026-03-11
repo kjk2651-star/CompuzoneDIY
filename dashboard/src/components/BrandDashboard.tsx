@@ -16,6 +16,7 @@ import { useCrawlStatus } from '@/hooks/useCrawlStatus';
 import { parseProduct, ParsedProduct } from '@/lib/parseComponents';
 import { PriceHistoryModal } from './PriceHistoryModal';
 import { BrandShareTab } from './BrandShareTab';
+import { CrawlButton } from './CrawlButton';
 
 interface BrandDashboardProps {
     brandId: string;
@@ -150,6 +151,7 @@ export function BrandDashboard({ brandId, brandLabel }: BrandDashboardProps) {
                                 }}
                                 disabled={datesLoading}
                             />
+                            <CrawlButton brandId={brandId} />
                         </Group>
                     </Group>
 
