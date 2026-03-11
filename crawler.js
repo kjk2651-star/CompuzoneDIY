@@ -158,34 +158,35 @@ async function extractProductsOnPage(page, mediumDivNo) {
       const nameEl = item.querySelector('.prd_info_name');
       const name = nameEl ? nameEl.innerText.trim() : '';
 
-      // 가격 추출: data-customprice(혜택가/맞춤가) > data-price(판매가)
+      // 가격 추출: 판매가 / 맞춤가 / 쿠폰적용가 중 최저가 사용
       const priceDiv = item.querySelector('[data-customprice]') || item.querySelector('[data-price]');
       let originalPrice = 0;
       let discountPrice = 0;
 
       if (priceDiv) {
-        // 혜택가(맞춤가): data-customprice 우선
-        const customPrice = Number((priceDiv.getAttribute('data-customprice') || '0').replace(/[^0-9]/g, '')) || 0;
         // 판매가: data-price
         const sellPrice = Number((priceDiv.getAttribute('data-price') || '0').replace(/[^0-9]/g, '')) || 0;
+        // 맞춤가: data-customprice
+        const customPrice = Number((priceDiv.getAttribute('data-customprice') || '0').replace(/[^0-9]/g, '')) || 0;
 
-        if (customPrice > 0) {
-          discountPrice = customPrice; // 혜택가 = 맞춤가
-          originalPrice = sellPrice || customPrice; // 판매가
-        } else {
-          originalPrice = sellPrice;
+        originalPrice = sellPrice || customPrice; // 판매가(정가)
+
+        // 쿠폰적용가: .price_Layer .sum dd 에서 추출
+        let couponPrice = 0;
+        const couponEl = item.querySelector('.price_Layer .sum dd, .prc_guide_ly .sum dd');
+        if (couponEl) {
+          couponPrice = Number((couponEl.innerText || '').replace(/[^0-9]/g, '')) || 0;
         }
+
+        // 판매가 / 맞춤가 / 쿠폰적용가 중 0이 아닌 최저가를 discountPrice로
+        const candidates = [sellPrice, customPrice, couponPrice].filter(p => p > 0);
+        discountPrice = candidates.length > 0 ? Math.min(...candidates) : 0;
       }
 
       // data 속성이 없을 경우 strong.number 폴백
       if (originalPrice === 0 && discountPrice === 0) {
         const priceEl = item.querySelector('strong.number');
         originalPrice = Number((priceEl ? priceEl.innerText : '').replace(/[^0-9]/g, '')) || 0;
-      }
-      if (discountPrice === 0) {
-        const allText = item.innerText || '';
-        const benefitMatch = allText.match(/혜택가[\s\S]{0,10}?([\d,]{5,})\s*원/);
-        if (benefitMatch) discountPrice = Number(benefitMatch[1].replace(/,/g, '')) || 0;
       }
 
       const linkEl = item.querySelector('a[href*="product_detail"]');
