@@ -158,12 +158,31 @@ async function extractProductsOnPage(page, mediumDivNo) {
       const nameEl = item.querySelector('.prd_info_name');
       const name = nameEl ? nameEl.innerText.trim() : '';
 
-      const priceEl = item.querySelector('strong.number');
+      // 가격 추출: 여러 셀렉터를 순서대로 시도
+      const priceEl = item.querySelector('strong.number')
+        || item.querySelector('span.number')
+        || item.querySelector('.price_num strong')
+        || item.querySelector('.prd_price strong')
+        || item.querySelector('.list_price strong')
+        || item.querySelector('[class*="price"] strong')
+        || item.querySelector('[class*="price"] em');
       const rawPrice = priceEl ? priceEl.innerText.replace(/[^0-9]/g, '') : '0';
-      const originalPrice = Number(rawPrice) || 0;
+      let originalPrice = Number(rawPrice) || 0;
+
+      // 텍스트에서 "원" 앞 숫자 패턴으로 최후 폴백 (10만원 이상만)
+      if (originalPrice === 0) {
+        const allText = item.innerText || '';
+        const priceMatches = allText.match(/([\d,]{6,})\s*원/g);
+        if (priceMatches) {
+          const candidates = priceMatches
+            .map(m => Number(m.replace(/[^0-9]/g, '')))
+            .filter(n => n >= 10000);
+          if (candidates.length > 0) originalPrice = Math.min(...candidates);
+        }
+      }
 
       let discountPrice = 0;
-      const benefitEl = item.querySelector('.bnf_price strong, .benefit_price strong');
+      const benefitEl = item.querySelector('.bnf_price strong, .benefit_price strong, .sale_price strong');
       if (benefitEl) {
         discountPrice = Number(benefitEl.innerText.replace(/[^0-9]/g, '')) || 0;
       } else {
