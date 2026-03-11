@@ -187,10 +187,20 @@ async function extractProductsOnPage(page, mediumDivNo) {
       }
 
       // 혜택가(할인가) 추출
+      // 1순위: .custom_price_inner .txt.co_red (컴퓨존 혜택가 전용 구조)
+      // layer_pop 안의 중복 숫자를 피하기 위해 텍스트 노드만 직접 추출
       let discountPrice = 0;
-      const benefitEl = item.querySelector('.bnf_price strong, .benefit_price strong, .sale_price strong');
-      if (benefitEl) {
-        discountPrice = Number(benefitEl.innerText.replace(/[^0-9]/g, '')) || 0;
+      const customPriceEl = item.querySelector('.custom_price_inner .txt.co_red, .custom_price .txt.co_red');
+      if (customPriceEl) {
+        const textNode = Array.from(customPriceEl.childNodes)
+          .filter(n => n.nodeType === Node.TEXT_NODE)
+          .map(n => n.textContent || '')
+          .join('');
+        discountPrice = Number(textNode.replace(/[^0-9]/g, '')) || 0;
+      }
+      if (discountPrice === 0) {
+        const benefitEl = item.querySelector('.bnf_price strong, .benefit_price strong, .sale_price strong');
+        if (benefitEl) discountPrice = Number(benefitEl.innerText.replace(/[^0-9]/g, '')) || 0;
       }
       if (discountPrice === 0 && priceDiv) {
         const dataDiscount = priceDiv.getAttribute('data-discountprice') || '0';
@@ -198,7 +208,7 @@ async function extractProductsOnPage(page, mediumDivNo) {
       }
       if (discountPrice === 0) {
         const allText = item.innerText || '';
-        const benefitMatch = allText.match(/혜택가[\s:]*?([\d,]+)\s*원/);
+        const benefitMatch = allText.match(/혜택가[\s\S]{0,10}?([\d,]{5,})\s*원/);
         if (benefitMatch) discountPrice = Number(benefitMatch[1].replace(/,/g, '')) || 0;
       }
 
