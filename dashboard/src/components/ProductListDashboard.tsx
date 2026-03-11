@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
     Container, Title, Text, Stack, Group, Paper, Loader, Center,
     Table, TextInput, ActionIcon, Tooltip, Badge, Button, ScrollArea,
@@ -25,39 +25,30 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
 
     const [filterName, setFilterName] = useState('');
     const [modelNameWidth, setModelNameWidth] = useState(250);
-    const resizeRef = useRef<HTMLDivElement>(null);
 
     // 가격 그래프 모달
     const [modalOpened, setModalOpened] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<ProductPriceRow | null>(null);
 
     // 모델명 컬럼 리사이즈 핸들
-    useEffect(() => {
-        const handleMouseDown = (e: MouseEvent) => {
-            e.preventDefault();
-            const startX = e.clientX;
-            const startWidth = modelNameWidth;
+    const handleResizeMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = modelNameWidth;
 
-            const handleMouseMove = (moveEvent: MouseEvent) => {
-                const delta = moveEvent.clientX - startX;
-                setModelNameWidth(Math.max(150, startWidth + delta));
-            };
-
-            const handleMouseUp = () => {
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            const delta = moveEvent.clientX - startX;
+            setModelNameWidth(Math.max(150, startWidth + delta));
         };
 
-        const resizeHandle = resizeRef.current;
-        if (resizeHandle) {
-            resizeHandle.addEventListener('mousedown', handleMouseDown);
-            return () => resizeHandle.removeEventListener('mousedown', handleMouseDown);
-        }
-    }, [modelNameWidth]);
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
 
     // 최근 30일 날짜 목록 (최신순 → 역순으로 테이블 헤더에 표시)
     const recentDates = useMemo(() => dates.slice(0, 30), [dates]);
@@ -202,7 +193,7 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                 <span>모델명</span>
                                                 <div
-                                                    ref={resizeRef}
+                                                    onMouseDown={handleResizeMouseDown}
                                                     style={{
                                                         width: '4px',
                                                         height: '20px',

@@ -37,7 +37,7 @@ export function useMultiDateProducts(brandId: string, availableDates: string[]) 
                     snapshot.docs.forEach((doc) => {
                         const data = doc.data();
                         const productNo = data.productNo || doc.id;
-                        const price = Number(data.discountPrice ?? data.originalPrice ?? 0);
+                        const price = Number(data.discountPrice || data.originalPrice || 0);
 
                         if (!productMap.has(productNo)) {
                             productMap.set(productNo, {
