@@ -158,21 +158,26 @@ async function extractProductsOnPage(page, mediumDivNo) {
       const nameEl = item.querySelector('.prd_info_name');
       const name = nameEl ? nameEl.innerText.trim() : '';
 
-      // 가격 추출: 여러 셀렉터를 순서대로 시도
-      const priceEl = item.querySelector('strong.number')
-        || item.querySelector('span.number')
-        || item.querySelector('.price_num strong')
-        || item.querySelector('.prd_price strong')
-        || item.querySelector('.list_price strong')
-        || item.querySelector('[class*="price"] strong')
-        || item.querySelector('[class*="price"] em');
-      const rawPrice = priceEl ? priceEl.innerText.replace(/[^0-9]/g, '') : '0';
-      let originalPrice = Number(rawPrice) || 0;
-
-      // 텍스트에서 "원" 앞 숫자 패턴으로 최후 폴백 (10만원 이상만)
+      // 가격 추출 (1순위: data 속성, 2순위: 텍스트 엘리먼트, 3순위: 텍스트 패턴)
+      const priceDiv = item.querySelector('[data-price]') || item.querySelector('[data-ori-price]');
+      let originalPrice = 0;
+      if (priceDiv) {
+        const dataPrice = priceDiv.getAttribute('data-price') || priceDiv.getAttribute('data-ori-price') || '0';
+        originalPrice = Number(dataPrice.replace(/[^0-9]/g, '')) || 0;
+      }
+      if (originalPrice === 0) {
+        const priceEl = item.querySelector('strong.number')
+          || item.querySelector('span.number')
+          || item.querySelector('.price_num strong')
+          || item.querySelector('.prd_price strong')
+          || item.querySelector('[class*="price"] strong')
+          || item.querySelector('[class*="price"] em');
+        originalPrice = Number((priceEl ? priceEl.innerText : '').replace(/[^0-9]/g, '')) || 0;
+      }
+      // 최후 폴백: innerText 전체에서 "원" 앞 숫자 (1만원 이상)
       if (originalPrice === 0) {
         const allText = item.innerText || '';
-        const priceMatches = allText.match(/([\d,]{6,})\s*원/g);
+        const priceMatches = allText.match(/([\d,]{5,})\s*원/g);
         if (priceMatches) {
           const candidates = priceMatches
             .map(m => Number(m.replace(/[^0-9]/g, '')))
@@ -181,16 +186,20 @@ async function extractProductsOnPage(page, mediumDivNo) {
         }
       }
 
+      // 혜택가(할인가) 추출
       let discountPrice = 0;
       const benefitEl = item.querySelector('.bnf_price strong, .benefit_price strong, .sale_price strong');
       if (benefitEl) {
         discountPrice = Number(benefitEl.innerText.replace(/[^0-9]/g, '')) || 0;
-      } else {
+      }
+      if (discountPrice === 0 && priceDiv) {
+        const dataDiscount = priceDiv.getAttribute('data-discountprice') || '0';
+        discountPrice = Number(dataDiscount.replace(/[^0-9]/g, '')) || 0;
+      }
+      if (discountPrice === 0) {
         const allText = item.innerText || '';
         const benefitMatch = allText.match(/혜택가[\s:]*?([\d,]+)\s*원/);
-        if (benefitMatch) {
-          discountPrice = Number(benefitMatch[1].replace(/,/g, '')) || 0;
-        }
+        if (benefitMatch) discountPrice = Number(benefitMatch[1].replace(/,/g, '')) || 0;
       }
 
       const linkEl = item.querySelector('a[href*="product_detail"]');
