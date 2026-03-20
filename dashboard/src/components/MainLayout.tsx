@@ -2,7 +2,7 @@
 
 import { AppShell, Burger, Group, Title, Text, UnstyledButton, Stack, rem, useMantineColorScheme, ActionIcon } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDeviceDesktop, IconShoppingCart, IconBuildingStore, IconSun, IconMoon, IconCpu, IconServer } from '@tabler/icons-react';
+import { IconDeviceDesktop, IconShoppingCart, IconBuildingStore, IconSun, IconMoon, IconCpu, IconServer, IconArrowsShuffle } from '@tabler/icons-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import classes from './MainLayout.module.css';
@@ -13,6 +13,7 @@ const navData = [
     { link: '/iworks', label: '아이웍스', icon: IconBuildingStore },
     { link: '/gpu', label: '그래픽카드', icon: IconCpu },
     { link: '/mainboard', label: '메인보드', icon: IconServer },
+    { link: '/ipc-compare', label: 'iPC 가격비교', icon: IconArrowsShuffle },
 ];
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
