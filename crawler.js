@@ -521,9 +521,18 @@ async function saveToFirestore(products, brandId, todayStr) {
 async function trackCompuzone() {
   // 특정 브랜드만 크롤링하는 옵션 (환경변수 CRAWL_BRAND)
   const targetBrand = (process.env.CRAWL_BRAND || '').trim();
-  const activeBrands = targetBrand
+  // SKIP_LOGIN_BRANDS=true → 로그인 필요 브랜드(그래픽카드/메인보드) 자동 제외 (schedule 용)
+  const skipLoginBrands = (process.env.SKIP_LOGIN_BRANDS || '').trim() === 'true';
+
+  let activeBrands = targetBrand
     ? BRANDS.filter((b) => b.id === targetBrand)
     : BRANDS;
+
+  if (skipLoginBrands) {
+    const before = activeBrands.length;
+    activeBrands = activeBrands.filter((b) => !b.requiresLogin);
+    console.log(`🔒 자동 스케줄 모드: 로그인 필요 브랜드 제외 (${before}개 → ${activeBrands.length}개)`);
+  }
 
   if (targetBrand && activeBrands.length === 0) {
     console.log(`❌ 브랜드 "${targetBrand}"를 찾을 수 없습니다. 가능한 값: ${BRANDS.map(b => b.id).join(', ')}`);

@@ -2,12 +2,12 @@ name: Daily Compuzone Scraper
 
 on:
   schedule:
-    # 매일 한국시간 자정 (UTC 15:00)
+    # 매일 한국시간 자정 (UTC 15:00) - 로그인 불필요 브랜드만 자동 실행
     - cron: '0 15 * * *'
   workflow_dispatch: # 수동 실행 버튼
     inputs:
       brand:
-        description: '특정 브랜드만 크롤링 (비우면 전체)'
+        description: '특정 브랜드만 크롤링 (비우면 전체). 로그인 필요 브랜드(그래픽카드/메인보드)는 수동 실행만 가능'
         required: false
         default: ''
         type: string
@@ -15,7 +15,7 @@ on:
 jobs:
   scrape-and-save:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -37,4 +37,6 @@ jobs:
           COMPUZONE_ID: ${{ secrets.COMPUZONE_ID }}
           COMPUZONE_PW: ${{ secrets.COMPUZONE_PW }}
           CRAWL_BRAND: ${{ github.event.inputs.brand }}
+          # schedule(자동) 이벤트에서는 로그인 필요 브랜드(그래픽카드/메인보드) 제외
+          SKIP_LOGIN_BRANDS: ${{ github.event_name == 'schedule' && 'true' || '' }}
         run: node crawler.js
