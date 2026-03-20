@@ -2,6 +2,40 @@ const { chromium } = require('playwright');
 const admin = require('firebase-admin');
 
 // ─────────────────────────────────────────────
+// 0. 봇 탐지 우회 유틸
+// ─────────────────────────────────────────────
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+];
+const VIEWPORTS = [
+  { width: 1920, height: 1080 },
+  { width: 1366, height: 768 },
+  { width: 1536, height: 864 },
+  { width: 1440, height: 900 },
+  { width: 1680, height: 1050 },
+];
+function randomPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function randomDelay(min, max) { return new Promise(r => setTimeout(r, min + Math.floor(Math.random() * (max - min)))); }
+
+// Playwright webdriver 시그니처 제거
+async function applyStealthScripts(page) {
+  await page.addInitScript(() => {
+    // navigator.webdriver 숨기기
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    // plugins 위장
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    // languages 위장
+    Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko', 'en-US', 'en'] });
+    // chrome runtime 위장
+    window.chrome = { runtime: {} };
+  });
+}
+
+// ─────────────────────────────────────────────
 // 1. Firebase Admin SDK 초기화
 //    GitHub Actions에서 private key PEM 디코딩 에러 방지를 위해
 //    전체 서비스 계정 JSON을 하나의 Secret(FIREBASE_SERVICE_ACCOUNT)에 넣는 방식 사용
@@ -110,11 +144,11 @@ async function loginToCompuzone(page) {
 
   console.log('\n  🔐 컴퓨존 로그인 시도...');
   await page.goto('https://www.compuzone.co.kr', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(2000);
+  await randomDelay(2000, 4000);
 
   // login() 함수 호출로 로그인 모달 열기
   await page.evaluate(() => { if (typeof login === 'function') login(); });
-  await page.waitForTimeout(2000);
+  await randomDelay(2000, 4000);
 
   // ID/PW 입력
   const idField = await page.$('#member_id');
@@ -129,7 +163,7 @@ async function loginToCompuzone(page) {
 
   // login_check() 호출로 로그인 실행
   await page.evaluate(() => { if (typeof login_check === 'function') login_check(); });
-  await page.waitForTimeout(5000);
+  await randomDelay(4000, 7000);
 
   // 로그인 성공 확인
   const logoutEl = await page.$('a:has-text("로그아웃"), a[href*="logout"]');
@@ -217,7 +251,7 @@ async function scrapeProductListPages(page, brand) {
   console.log(`${'═'.repeat(60)}`);
 
   await page.goto(brand.listUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForTimeout(3000);
+  await randomDelay(3000, 6000);
 
   try {
     await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 });
@@ -250,24 +284,24 @@ async function scrapeProductListPages(page, brand) {
       }, { pageNum: pg, os: offset });
 
       // 페이지 이동 후 상품 리스트 갱신 대기
-      await page.waitForTimeout(2000);
+      await randomDelay(2000, 4000);
       await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(1000);
+      await randomDelay(1000, 3000);
     }
 
     // 혜택가(.custom_price_inner)가 로그인 후 AJAX로 렌더링될 때까지 대기
     await page.waitForSelector('.custom_price_inner', { timeout: 8000 }).catch(() => {
       console.log(`    ⚠ 혜택가 요소 미감지 – 로그인 상태 또는 페이지 구조 확인 필요`);
     });
-    await page.waitForTimeout(1000);
+    await randomDelay(1000, 3000);
 
     // 스크롤로 현재 페이지 상품 모두 로드 (lazy load 대비)
     for (let i = 0; i < 4; i++) {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(1000);
+      await randomDelay(1000, 3000);
     }
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(500);
+    await randomDelay(500, 1500);
 
     const pageProducts = await extractProductsOnPage(page, mediumDivNo);
     let newCount = 0;
@@ -302,7 +336,7 @@ async function scrapeListPages(page, brand) {
     listFound = true;
   } catch {
     console.log(`  ⚠ [${brand.id}] 첫 번째 대기 실패, 5초 추가 대기 후 재시도...`);
-    await page.waitForTimeout(5000);
+    await randomDelay(4000, 7000);
     try {
       await page.waitForSelector('#recom_search_ul > li', { timeout: 10000 });
       listFound = true;
@@ -310,7 +344,7 @@ async function scrapeListPages(page, brand) {
       console.log(`  ❌ [${brand.id}] 리스트 요소 최종 미발견`);
     }
   }
-  await page.waitForTimeout(3000);
+  await randomDelay(3000, 6000);
 
   if (!listFound) {
     console.log(`  ⚠ [${brand.id}] 상품 리스트를 찾을 수 없습니다. 건너뜁니다.`);
@@ -331,9 +365,9 @@ async function scrapeListPages(page, brand) {
       await page.evaluate(({ pg, os }) => {
         if (typeof recom_go === 'function') recom_go(pg, os);
       }, { pg: currentPage, os: offset });
-      await page.waitForTimeout(3000);
+      await randomDelay(3000, 6000);
       await page.waitForSelector('#recom_search_ul > li', { timeout: 15000 }).catch(() => { });
-      await page.waitForTimeout(1000);
+      await randomDelay(1000, 3000);
     }
 
     // 현재 페이지의 상품 목록 추출
@@ -422,7 +456,7 @@ async function scrapeDetailComponents(page, products, brandId, brandIdx, totalBr
       await page.waitForSelector('div.recom_L table.table_style_recom', { timeout: 15000 }).catch(() => {
         console.log(`      ⚠ 부품 테이블 미발견 (${item.productNo})`);
       });
-      await page.waitForTimeout(2000);
+      await randomDelay(2000, 4000);
 
       const componentList = await page.$$eval('div.recom_L table.table_style_recom tbody tr', (rows) => {
         const results = [];
@@ -477,7 +511,7 @@ async function scrapeDetailComponents(page, products, brandId, brandIdx, totalBr
       console.log(`      ❌ 오류: ${e.message}`);
       item.components = [];
     }
-    await page.waitForTimeout(2000);
+    await randomDelay(2000, 4000);
   }
 }
 
@@ -543,10 +577,17 @@ async function trackCompuzone() {
   await updateProgress('running', 0, `${modeLabel} 시작 중...`);
 
   const browser = await chromium.launch({ headless: true });
+  const ua = randomPick(USER_AGENTS);
+  const vp = randomPick(VIEWPORTS);
+  console.log(`🌐 UA: ${ua.slice(0, 60)}... | Viewport: ${vp.width}x${vp.height}`);
   const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    userAgent: ua,
+    viewport: vp,
+    locale: 'ko-KR',
+    timezoneId: 'Asia/Seoul',
   });
   const page = await context.newPage();
+  await applyStealthScripts(page);
   const todayStr = getTodayDateString();
 
   try {
