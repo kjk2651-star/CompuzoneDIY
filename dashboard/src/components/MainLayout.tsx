@@ -11,6 +11,7 @@ const navData = [
     { link: '/premium-pc', label: '프리미엄PC', icon: IconDeviceDesktop },
     { link: '/recommend-pc', label: '추천조립PC', icon: IconShoppingCart },
     { link: '/iworks', label: '아이웍스', icon: IconBuildingStore },
+    { link: '/cpu', label: 'CPU', icon: IconCpu },
     { link: '/gpu', label: '그래픽카드', icon: IconCpu },
     { link: '/mainboard', label: '메인보드', icon: IconServer },
     { link: '/microsoft', label: 'Microsoft', icon: IconBrandWindows },

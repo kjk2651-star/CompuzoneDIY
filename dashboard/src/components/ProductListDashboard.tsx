@@ -14,7 +14,7 @@ import { useCrawlStatus } from '@/hooks/useCrawlStatus';
 import { CrawlButton } from './CrawlButton';
 
 // 로그인 필요 브랜드 (딜러가 페이지 - 비로그인 시 메인으로 리다이렉트됨)
-const LOGIN_REQUIRED_BRANDS = ['그래픽카드', '메인보드', 'Microsoft'];
+const LOGIN_REQUIRED_BRANDS = ['CPU', '그래픽카드', '메인보드', 'Microsoft'];
 
 interface ProductListDashboardProps {
     brandId: string;

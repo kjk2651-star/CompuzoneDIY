@@ -8,6 +8,7 @@ const brands = [
   { title: '프리미엄PC', desc: '컴퓨존이 보증하는 고사양 PC 목록', icon: IconDeviceDesktop, color: 'blue', href: '/premium-pc' },
   { title: '추천조립PC', desc: '다양한 견적의 조립 PC 실시간 가격', icon: IconShoppingCart, color: 'teal', href: '/recommend-pc' },
   { title: '아이웍스', desc: '컴퓨존 자체 브랜드 iworks PC 추이', icon: IconBuildingStore, color: 'indigo', href: '/iworks' },
+  { title: 'CPU', desc: 'CPU 부품 가격 실시간 모니터링', icon: IconCpu, color: 'grape', href: '/cpu' },
   { title: '그래픽카드', desc: '그래픽카드 부품 가격 실시간 모니터링', icon: IconCpu, color: 'red', href: '/gpu' },
   { title: '메인보드', desc: '메인보드 부품 가격 실시간 모니터링', icon: IconServer, color: 'orange', href: '/mainboard' },
   { title: 'Microsoft', desc: 'Microsoft 관련 제품 딜러가 모니터링', icon: IconBrandWindows, color: 'cyan', href: '/microsoft' },

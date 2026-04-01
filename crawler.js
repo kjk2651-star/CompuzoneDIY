@@ -96,6 +96,12 @@ const BRANDS = [
     requiresLogin: true,
   },
   {
+    id: 'CPU',
+    listUrl: 'https://www.compuzone.co.kr/product/product_list.htm?BigDivNo=4&MediumDivNo=1012',
+    type: 'product_list',
+    requiresLogin: true,
+  },
+  {
     id: 'Microsoft',
     listUrl: [
       'https://www.compuzone.co.kr/product/product_list.htm?BigDivNo=9&MediumDivNo=1041&DivNo=3208',
