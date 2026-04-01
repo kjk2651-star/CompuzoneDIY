@@ -95,6 +95,15 @@ const BRANDS = [
     type: 'product_list',
     requiresLogin: true,
   },
+  {
+    id: 'Microsoft',
+    listUrl: [
+      'https://www.compuzone.co.kr/product/product_list.htm?BigDivNo=9&MediumDivNo=1041&DivNo=3208',
+      'https://www.compuzone.co.kr/product/product_list.htm?BigDivNo=9&MediumDivNo=1041&DivNo=2275',
+    ],
+    type: 'product_list',
+    requiresLogin: true,
+  },
 ];
 
 // ─────────────────────────────────────────────
@@ -246,73 +255,81 @@ async function extractProductsOnPage(page, mediumDivNo) {
 async function scrapeProductListPages(page, brand) {
   const ITEMS_PER_PAGE = 60;
 
+  // listUrl이 배열이면 여러 URL을 순회하며 수집
+  const urls = Array.isArray(brand.listUrl) ? brand.listUrl : [brand.listUrl];
+
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`  📦 [${brand.id}] 부품 리스트 수집 시작 (페이지네이션)`);
+  console.log(`  📦 [${brand.id}] 부품 리스트 수집 시작 (페이지네이션, URL ${urls.length}개)`);
   console.log(`${'═'.repeat(60)}`);
-
-  await page.goto(brand.listUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await randomDelay(3000, 6000);
-
-  try {
-    await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 });
-  } catch {
-    console.log(`  ⚠ [${brand.id}] 상품 리스트 미발견. 건너뜁니다.`);
-    return [];
-  }
-
-  // 총 상품 수 추출 (h2 텍스트: "그래픽카드 (725)")
-  const totalCountText = await page.$eval('h2', (el) => el.innerText).catch(() => '');
-  const totalMatch = totalCountText.match(/\((\d[\d,]*)\)/);
-  const expectedTotal = totalMatch ? Number(totalMatch[1].replace(/,/g, '')) : 0;
-  const totalPages = expectedTotal > 0 ? Math.ceil(expectedTotal / ITEMS_PER_PAGE) : 1;
-  console.log(`  📊 총 상품 수: ${expectedTotal || '확인 불가'}, 총 페이지: ${totalPages}`);
-
-  // MediumDivNo 추출 (URL에서)
-  const mediumDivMatch = brand.listUrl.match(/MediumDivNo=(\d+)/);
-  const mediumDivNo = mediumDivMatch ? mediumDivMatch[1] : '1';
 
   let allProducts = [];
   const seenNos = new Set();
 
-  for (let pg = 1; pg <= totalPages; pg++) {
-    console.log(`    📄 ${pg}/${totalPages} 페이지 수집 중...`);
+  for (let urlIdx = 0; urlIdx < urls.length; urlIdx++) {
+    const currentUrl = urls[urlIdx];
+    console.log(`\n  🔗 [${brand.id}] URL ${urlIdx + 1}/${urls.length}: ${currentUrl}`);
 
-    if (pg > 1) {
-      const offset = (pg - 1) * ITEMS_PER_PAGE;
-      await page.evaluate(({ pageNum, os }) => {
-        if (typeof GotoPage === 'function') GotoPage(document.global_form, pageNum, os);
-      }, { pageNum: pg, os: offset });
+    await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await randomDelay(3000, 6000);
 
-      // 페이지 이동 후 상품 리스트 갱신 대기
-      await randomDelay(2000, 4000);
-      await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 }).catch(() => {});
-      await randomDelay(1000, 3000);
+    try {
+      await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 });
+    } catch {
+      console.log(`  ⚠ [${brand.id}] URL ${urlIdx + 1} 상품 리스트 미발견. 건너뜁니다.`);
+      continue;
     }
 
-    // 혜택가(.custom_price_inner)가 로그인 후 AJAX로 렌더링될 때까지 대기
-    await page.waitForSelector('.custom_price_inner', { timeout: 8000 }).catch(() => {
-      console.log(`    ⚠ 혜택가 요소 미감지 – 로그인 상태 또는 페이지 구조 확인 필요`);
-    });
-    await randomDelay(1000, 3000);
+    // 총 상품 수 추출 (h2 텍스트: "그래픽카드 (725)")
+    const totalCountText = await page.$eval('h2', (el) => el.innerText).catch(() => '');
+    const totalMatch = totalCountText.match(/\((\d[\d,]*)\)/);
+    const expectedTotal = totalMatch ? Number(totalMatch[1].replace(/,/g, '')) : 0;
+    const totalPages = expectedTotal > 0 ? Math.ceil(expectedTotal / ITEMS_PER_PAGE) : 1;
+    console.log(`  📊 총 상품 수: ${expectedTotal || '확인 불가'}, 총 페이지: ${totalPages}`);
 
-    // 스크롤로 현재 페이지 상품 모두 로드 (lazy load 대비)
-    for (let i = 0; i < 4; i++) {
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await randomDelay(1000, 3000);
-    }
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await randomDelay(500, 1500);
+    // MediumDivNo 추출 (URL에서)
+    const mediumDivMatch = currentUrl.match(/MediumDivNo=(\d+)/);
+    const mediumDivNo = mediumDivMatch ? mediumDivMatch[1] : '1';
 
-    const pageProducts = await extractProductsOnPage(page, mediumDivNo);
-    let newCount = 0;
-    for (const p of pageProducts) {
-      if (!seenNos.has(p.productNo)) {
-        seenNos.add(p.productNo);
-        allProducts.push(p);
-        newCount++;
+    for (let pg = 1; pg <= totalPages; pg++) {
+      console.log(`    📄 ${pg}/${totalPages} 페이지 수집 중...`);
+
+      if (pg > 1) {
+        const offset = (pg - 1) * ITEMS_PER_PAGE;
+        await page.evaluate(({ pageNum, os }) => {
+          if (typeof GotoPage === 'function') GotoPage(document.global_form, pageNum, os);
+        }, { pageNum: pg, os: offset });
+
+        // 페이지 이동 후 상품 리스트 갱신 대기
+        await randomDelay(2000, 4000);
+        await page.waitForSelector('ul#product_list_ul > li.li-obj', { timeout: 15000 }).catch(() => {});
+        await randomDelay(1000, 3000);
       }
+
+      // 혜택가(.custom_price_inner)가 로그인 후 AJAX로 렌더링될 때까지 대기
+      await page.waitForSelector('.custom_price_inner', { timeout: 8000 }).catch(() => {
+        console.log(`    ⚠ 혜택가 요소 미감지 – 로그인 상태 또는 페이지 구조 확인 필요`);
+      });
+      await randomDelay(1000, 3000);
+
+      // 스크롤로 현재 페이지 상품 모두 로드 (lazy load 대비)
+      for (let i = 0; i < 4; i++) {
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await randomDelay(1000, 3000);
+      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await randomDelay(500, 1500);
+
+      const pageProducts = await extractProductsOnPage(page, mediumDivNo);
+      let newCount = 0;
+      for (const p of pageProducts) {
+        if (!seenNos.has(p.productNo)) {
+          seenNos.add(p.productNo);
+          allProducts.push(p);
+          newCount++;
+        }
+      }
+      console.log(`    ✅ ${pageProducts.length}개 추출 (신규: ${newCount}개, 누계: ${allProducts.length}개)`);
     }
-    console.log(`    ✅ ${pageProducts.length}개 추출 (신규: ${newCount}개, 누계: ${allProducts.length}개)`);
   }
 
   console.log(`  🏁 [${brand.id}] 전체 ${allProducts.length}개 상품 수집 완료\n`);
