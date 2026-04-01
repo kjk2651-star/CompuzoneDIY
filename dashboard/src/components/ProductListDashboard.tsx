@@ -6,12 +6,15 @@ import {
     Table, TextInput, ActionIcon, Tooltip, Badge, Button, ScrollArea,
     NumberFormatter, Modal
 } from '@mantine/core';
-import { IconExternalLink, IconSearch, IconDownload } from '@tabler/icons-react';
+import { IconExternalLink, IconSearch, IconDownload, IconLock } from '@tabler/icons-react';
 import { LineChart } from '@mantine/charts';
 import { useAvailableDates } from '@/hooks/useAvailableDates';
 import { useMultiDateProducts, ProductPriceRow } from '@/hooks/useMultiDateProducts';
 import { useCrawlStatus } from '@/hooks/useCrawlStatus';
 import { CrawlButton } from './CrawlButton';
+
+// 로그인 필요 브랜드 (딜러가 페이지 - 비로그인 시 메인으로 리다이렉트됨)
+const LOGIN_REQUIRED_BRANDS = ['그래픽카드', '메인보드', 'Microsoft'];
 
 interface ProductListDashboardProps {
     brandId: string;
@@ -252,17 +255,19 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                                                 );
                                             })}
                                             <Table.Td ta="center">
-                                                <ActionIcon
-                                                    component="a"
-                                                    href={row.detailUrl}
-                                                    target="_blank"
-                                                    variant="light"
-                                                    color="blue"
-                                                    size="sm"
-                                                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                                                >
-                                                    <IconExternalLink size={14} />
-                                                </ActionIcon>
+                                                <Tooltip label={LOGIN_REQUIRED_BRANDS.includes(brandId) ? '로그인 필요 - 컴퓨존 로그인 후 접속 가능' : '상세 페이지 열기'}>
+                                                    <ActionIcon
+                                                        component="a"
+                                                        href={row.detailUrl}
+                                                        target="_blank"
+                                                        variant="light"
+                                                        color={LOGIN_REQUIRED_BRANDS.includes(brandId) ? 'orange' : 'blue'}
+                                                        size="sm"
+                                                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                                    >
+                                                        {LOGIN_REQUIRED_BRANDS.includes(brandId) ? <IconLock size={14} /> : <IconExternalLink size={14} />}
+                                                    </ActionIcon>
+                                                </Tooltip>
                                             </Table.Td>
                                         </Table.Tr>
                                     ))}
