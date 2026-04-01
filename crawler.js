@@ -193,7 +193,8 @@ async function loginToCompuzone(page) {
 
 // 현재 페이지에 표시된 상품 추출 헬퍼
 async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
-  return await page.$$eval('ul#product_list_ul > li.li-obj', (items, divNo, bigDiv) => {
+  return await page.$$eval('ul#product_list_ul > li.li-obj', (items, params) => {
+    const { divNo, bigDiv } = params;
     return items.map((item) => {
       const pNo = (item.id || '').replace('li-pno-', '');
       if (!pNo) return null;
@@ -249,7 +250,7 @@ async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
 
       return { productNo: pNo, name, originalPrice, discountPrice, detailUrl, specText, components: [] };
     }).filter(Boolean);
-  }, mediumDivNo, bigDivNo);
+  }, { divNo: mediumDivNo, bigDiv: bigDivNo });
 }
 
 async function scrapeProductListPages(page, brand) {
