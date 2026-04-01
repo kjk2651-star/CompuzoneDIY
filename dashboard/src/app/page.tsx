@@ -1,7 +1,7 @@
 'use client';
 
 import { Container, Title, Text, Stack, SimpleGrid, Paper, UnstyledButton, Group, ThemeIcon, rem } from '@mantine/core';
-import { IconDeviceDesktop, IconShoppingCart, IconBuildingStore, IconChevronRight, IconCpu, IconServer, IconArrowsShuffle, IconBrandWindows } from '@tabler/icons-react';
+import { IconDeviceDesktop, IconShoppingCart, IconBuildingStore, IconChevronRight, IconCpu, IconServer, IconArrowsShuffle, IconBrandWindows, IconReportAnalytics } from '@tabler/icons-react';
 import Link from 'next/link';
 
 const brands = [
@@ -13,6 +13,7 @@ const brands = [
   { title: '메인보드', desc: '메인보드 부품 가격 실시간 모니터링', icon: IconServer, color: 'orange', href: '/mainboard' },
   { title: 'Microsoft', desc: 'Microsoft 관련 제품 딜러가 모니터링', icon: IconBrandWindows, color: 'cyan', href: '/microsoft' },
   { title: 'iPC 가격비교', desc: 'iPC 부품과 컴퓨존 조립PC 스펙별 가격 비교', icon: IconArrowsShuffle, color: 'violet', href: '/ipc-compare' },
+  { title: 'Summary', desc: '주요 품목 최신가/변동 한눈에 보기', icon: IconReportAnalytics, color: 'yellow', href: '/summary' },
 ];
 
 export default function Home() {
