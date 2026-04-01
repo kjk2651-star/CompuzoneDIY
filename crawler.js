@@ -192,8 +192,8 @@ async function loginToCompuzone(page) {
 // ─────────────────────────────────────────────
 
 // 현재 페이지에 표시된 상품 추출 헬퍼
-async function extractProductsOnPage(page, mediumDivNo) {
-  return await page.$$eval('ul#product_list_ul > li.li-obj', (items, divNo) => {
+async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
+  return await page.$$eval('ul#product_list_ul > li.li-obj', (items, divNo, bigDiv) => {
     return items.map((item) => {
       const pNo = (item.id || '').replace('li-pno-', '');
       if (!pNo) return null;
@@ -241,7 +241,7 @@ async function extractProductsOnPage(page, mediumDivNo) {
           : 'https://www.compuzone.co.kr/product/' + href.replace(/^\.\.\/product\//, '').replace(/^\.\.\//, '');
       }
       if (!detailUrl && pNo) {
-        detailUrl = `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=4&MediumDivNo=${divNo}&SearchType=Y`;
+        detailUrl = `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=${bigDiv}&MediumDivNo=${divNo}&SearchType=Y`;
       }
 
       const specEl = item.querySelector('.prd_subTxt, .prd_spec, .spec_txt');
@@ -249,7 +249,7 @@ async function extractProductsOnPage(page, mediumDivNo) {
 
       return { productNo: pNo, name, originalPrice, discountPrice, detailUrl, specText, components: [] };
     }).filter(Boolean);
-  }, mediumDivNo);
+  }, mediumDivNo, bigDivNo);
 }
 
 async function scrapeProductListPages(page, brand) {
@@ -286,7 +286,9 @@ async function scrapeProductListPages(page, brand) {
     const totalPages = expectedTotal > 0 ? Math.ceil(expectedTotal / ITEMS_PER_PAGE) : 1;
     console.log(`  📊 총 상품 수: ${expectedTotal || '확인 불가'}, 총 페이지: ${totalPages}`);
 
-    // MediumDivNo 추출 (URL에서)
+    // BigDivNo, MediumDivNo 추출 (URL에서)
+    const bigDivMatch = currentUrl.match(/BigDivNo=(\d+)/);
+    const bigDivNo = bigDivMatch ? bigDivMatch[1] : '4';
     const mediumDivMatch = currentUrl.match(/MediumDivNo=(\d+)/);
     const mediumDivNo = mediumDivMatch ? mediumDivMatch[1] : '1';
 
@@ -319,7 +321,7 @@ async function scrapeProductListPages(page, brand) {
       await page.evaluate(() => window.scrollTo(0, 0));
       await randomDelay(500, 1500);
 
-      const pageProducts = await extractProductsOnPage(page, mediumDivNo);
+      const pageProducts = await extractProductsOnPage(page, mediumDivNo, bigDivNo);
       let newCount = 0;
       for (const p of pageProducts) {
         if (!seenNos.has(p.productNo)) {
