@@ -248,7 +248,11 @@ async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
           : 'https://www.compuzone.co.kr/product/' + href.replace(/^\.\.\/product\//, '').replace(/^\.\.\//, '');
       }
       if (!detailUrl && pNo) {
-        detailUrl = `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=${bigDiv}&MediumDivNo=${divNo}&SearchType=Y`;
+        detailUrl = `https://www.compuzone.co.kr/product/product_detail.htm?ProductNo=${pNo}&BigDivNo=${bigDiv}&MediumDivNo=${divNo}&DivNo=0&SearchType=Y`;
+      }
+      // 추출된 URL에 BigDivNo가 없으면 추가 (BigDivNo=9 등 일부 카테고리는 필수)
+      if (detailUrl && !detailUrl.includes('BigDivNo=')) {
+        detailUrl += `${detailUrl.includes('?') ? '&' : '?'}BigDivNo=${bigDiv}&MediumDivNo=${divNo}&DivNo=0`;
       }
 
       const specEl = item.querySelector('.prd_subTxt, .prd_spec, .spec_txt');
