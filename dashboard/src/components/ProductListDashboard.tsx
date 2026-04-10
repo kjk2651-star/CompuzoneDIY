@@ -221,13 +221,16 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                                     {filteredRows.map((row) => (
                                         <Table.Tr
                                             key={row.productNo}
-                                            style={{ cursor: 'pointer' }}
+                                            style={{ cursor: 'pointer', opacity: row.soldOut ? 0.5 : 1 }}
                                             onClick={() => handleRowClick(row)}
                                         >
                                             <Table.Td style={{ position: 'sticky', left: 0, background: 'var(--mantine-color-body)', zIndex: 1, width: modelNameWidth, minWidth: modelNameWidth, maxWidth: modelNameWidth, overflow: 'hidden' }}>
-                                                <Tooltip label={row.name} multiline w={400}>
-                                                    <Text size="xs" fw={600} lineClamp={1} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</Text>
-                                                </Tooltip>
+                                                <Group gap={4} wrap="nowrap">
+                                                    {row.soldOut && <Badge size="xs" color="red" variant="filled" style={{ flexShrink: 0 }}>품절</Badge>}
+                                                    <Tooltip label={row.name} multiline w={400}>
+                                                        <Text size="xs" fw={600} lineClamp={1} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</Text>
+                                                    </Tooltip>
+                                                </Group>
                                             </Table.Td>
                                             {recentDates.map((d, idx) => {
                                                 const price = row.prices[d];

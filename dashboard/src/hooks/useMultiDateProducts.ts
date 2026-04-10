@@ -8,6 +8,7 @@ export interface ProductPriceRow {
     productNo: string;
     name: string;
     detailUrl: string;
+    soldOut: boolean;
     prices: Record<string, number>; // { '2026-03-10': 350000, '2026-03-09': 355000, ... }
 }
 
@@ -44,14 +45,16 @@ export function useMultiDateProducts(brandId: string, availableDates: string[]) 
                                 productNo,
                                 name: data.name || '',
                                 detailUrl: data.detailUrl || '',
+                                soldOut: false,
                                 prices: {},
                             });
                         }
 
                         const row = productMap.get(productNo)!;
-                        // 이름/URL은 최신 데이터로 업데이트
+                        // 이름/URL/품절 상태는 최신 데이터로 업데이트
                         if (data.name) row.name = data.name;
                         if (data.detailUrl) row.detailUrl = data.detailUrl;
+                        if (data.soldOut !== undefined) row.soldOut = !!data.soldOut;
                         if (price > 0) row.prices[date] = price;
                     });
                 } catch (e) {

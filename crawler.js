@@ -258,7 +258,16 @@ async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
       const specEl = item.querySelector('.prd_subTxt, .prd_spec, .spec_txt');
       const specText = specEl ? specEl.innerText.trim() : '';
 
-      return { productNo: pNo, name, originalPrice, discountPrice, detailUrl, specText, components: [] };
+      // 품절 감지: "품절" 오버레이, "재입고 알림" 버튼, "입고예정일" 텍스트
+      const itemText = item.innerText || '';
+      const soldOut = !!(
+        item.querySelector('.soldout, .sold_out, .out_of_stock, .prd_soldout') ||
+        itemText.includes('품절') ||
+        itemText.includes('재입고 알림') ||
+        itemText.includes('입고예정일')
+      );
+
+      return { productNo: pNo, name, originalPrice, discountPrice, detailUrl, specText, soldOut, components: [] };
     }).filter(Boolean);
   }, { divNo: mediumDivNo, bigDiv: bigDivNo });
 }
