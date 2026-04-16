@@ -106,6 +106,7 @@ const BRANDS = [
     listUrl: [
       'https://www.compuzone.co.kr/product/product_list.htm?BigDivNo=9&MediumDivNo=1041&DivNo=3208',
       'https://www.compuzone.co.kr/product/product_list.htm?BigDivNo=9&MediumDivNo=1041&DivNo=2275',
+      'https://www.compuzone.co.kr/product/product_list.htm?BigDivNo=9&MediumDivNo=1042',
     ],
     type: 'product_list',
     requiresLogin: true,
