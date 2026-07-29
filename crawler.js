@@ -159,38 +159,62 @@ async function loginToCompuzone(page) {
   if (isLoggedIn) return true;
 
   console.log('\n  🔐 컴퓨존 로그인 시도...');
-  await page.goto('https://www.compuzone.co.kr', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await randomDelay(2000, 4000);
 
-  // login() 함수 호출로 로그인 모달 열기
-  await page.evaluate(() => { if (typeof login === 'function') login(); });
-  await randomDelay(2000, 4000);
-
-  // ID/PW 입력
-  const idField = await page.$('#member_id');
-  const pwField = await page.$('input[type="password"]');
-  if (!idField || !pwField) {
-    console.log('  ❌ 로그인 폼을 찾을 수 없습니다.');
+  // 홈페이지 접속: 일시적 네트워크 지연/봇 방어로 한 번에 실패할 수 있으므로
+  // 최대 3회까지 재시도(타임아웃 60초)한다. 끝내 실패해도 throw하지 않고 false 반환.
+  let homeLoaded = false;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.goto('https://www.compuzone.co.kr', { waitUntil: 'domcontentloaded', timeout: 60000 });
+      homeLoaded = true;
+      break;
+    } catch (e) {
+      console.log(`  ⚠ 홈페이지 접속 실패 (시도 ${attempt}/3): ${e.message}`);
+      if (attempt < 3) await randomDelay(3000, 6000);
+    }
+  }
+  if (!homeLoaded) {
+    console.log('  ❌ 홈페이지 접속 3회 실패 – 로그인을 건너뜁니다 (로그인 불필요 브랜드는 계속 진행).');
     return false;
   }
 
-  await page.fill('#member_id', COMPUZONE_ID);
-  await pwField.fill(COMPUZONE_PW);
+  // 로그인 폼 조작 단계도 예외가 전체 크롤링을 죽이지 않도록 try로 감싼다.
+  try {
+    await randomDelay(2000, 4000);
 
-  // login_check() 호출로 로그인 실행
-  await page.evaluate(() => { if (typeof login_check === 'function') login_check(); });
-  await randomDelay(4000, 7000);
+    // login() 함수 호출로 로그인 모달 열기
+    await page.evaluate(() => { if (typeof login === 'function') login(); });
+    await randomDelay(2000, 4000);
 
-  // 로그인 성공 확인
-  const logoutEl = await page.$('a:has-text("로그아웃"), a[href*="logout"]');
-  if (logoutEl) {
-    console.log('  ✅ 로그인 성공!');
-    isLoggedIn = true;
-    return true;
+    // ID/PW 입력
+    const idField = await page.$('#member_id');
+    const pwField = await page.$('input[type="password"]');
+    if (!idField || !pwField) {
+      console.log('  ❌ 로그인 폼을 찾을 수 없습니다.');
+      return false;
+    }
+
+    await page.fill('#member_id', COMPUZONE_ID);
+    await pwField.fill(COMPUZONE_PW);
+
+    // login_check() 호출로 로그인 실행
+    await page.evaluate(() => { if (typeof login_check === 'function') login_check(); });
+    await randomDelay(4000, 7000);
+
+    // 로그인 성공 확인
+    const logoutEl = await page.$('a:has-text("로그아웃"), a[href*="logout"]');
+    if (logoutEl) {
+      console.log('  ✅ 로그인 성공!');
+      isLoggedIn = true;
+      return true;
+    }
+
+    console.log('  ❌ 로그인 실패 - 로그아웃 링크를 찾을 수 없습니다.');
+    return false;
+  } catch (e) {
+    console.log(`  ❌ 로그인 처리 중 오류: ${e.message} – 로그인을 건너뜁니다.`);
+    return false;
   }
-
-  console.log('  ❌ 로그인 실패 - 로그아웃 링크를 찾을 수 없습니다.');
-  return false;
 }
 
 // ─────────────────────────────────────────────
@@ -367,7 +391,13 @@ async function scrapeListPages(page, brand) {
   console.log(`  📦 [${brand.id}] 리스트 수집 시작`);
   console.log(`${'═'.repeat(60)}`);
 
-  await page.goto(brand.listUrl, { waitUntil: 'networkidle', timeout: 60000 });
+  // networkidle은 광고/추적 요청 때문에 도달하지 못할 수 있으므로 domcontentloaded로 이동
+  // (리스트 렌더링은 아래 waitForSelector가 보장)
+  try {
+    await page.goto(brand.listUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } catch (e) {
+    console.log(`  ⚠ [${brand.id}] 리스트 페이지 이동 실패: ${e.message.split('\n')[0]} – 렌더링 대기로 계속 진행`);
+  }
 
   // ★ 폴백 대기: waitForSelector 실패 시 추가 대기 후 재시도
   let listFound = false;
@@ -470,35 +500,9 @@ async function scrapeListPages(page, brand) {
 // ─────────────────────────────────────────────
 // 5. 상세 페이지 부품 스크래핑 (공통 로직 + 진행률 업데이트)
 // ─────────────────────────────────────────────
-async function scrapeDetailComponents(page, products, brandId, brandIdx, totalBrands) {
-  console.log(`  🔧 [${brandId}] 상세 부품 스크래핑 시작 (${products.length}개)...`);
-
-  for (let i = 0; i < products.length; i++) {
-    const item = products[i];
-    console.log(`    [${i + 1}/${products.length}] ${item.name}`);
-
-    // 진행률 계산: 브랜드 단위 진척 + 상품 단위 세부 진척
-    const brandWeight = 100 / totalBrands;
-    const itemProgress = ((i + 1) / products.length) * brandWeight;
-    const overallPercent = Math.round((brandIdx * brandWeight) + itemProgress);
-
-    // 5건마다 Firestore 진행률 업데이트 (너무 빈번한 업데이트 방지)
-    if (i % 5 === 0 || i === products.length - 1) {
-      await updateProgress(
-        'running',
-        Math.min(overallPercent, 99),
-        `[${brandId}] ${i + 1}/${products.length} 상세 수집 중...`
-      );
-    }
-
-    try {
-      await page.goto(item.detailUrl, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForSelector('div.recom_L table.table_style_recom', { timeout: 15000 }).catch(() => {
-        console.log(`      ⚠ 부품 테이블 미발견 (${item.productNo})`);
-      });
-      await randomDelay(2000, 4000);
-
-      const componentList = await page.$$eval('div.recom_L table.table_style_recom tbody tr', (rows) => {
+// 현재 페이지 DOM에서 부품 테이블을 추출하는 헬퍼
+async function extractComponentTable(page) {
+  return await page.$$eval('div.recom_L table.table_style_recom tbody tr', (rows) => {
         const results = [];
         rows.forEach((row) => {
           if (row.querySelector('th')) return;
@@ -543,13 +547,64 @@ async function scrapeDetailComponents(page, products, brandId, brandIdx, totalBr
           results.push({ type, partName, partPrice, quantity });
         });
         return results;
-      }).catch(() => []);
+  }).catch(() => []);
+}
 
-      item.components = componentList;
-      console.log(`      → ${componentList.length}개 부품`);
-    } catch (e) {
-      console.log(`      ❌ 오류: ${e.message}`);
-      item.components = [];
+async function scrapeDetailComponents(page, products, brandId, brandIdx, totalBrands) {
+  console.log(`  🔧 [${brandId}] 상세 부품 스크래핑 시작 (${products.length}개)...`);
+
+  for (let i = 0; i < products.length; i++) {
+    const item = products[i];
+    console.log(`    [${i + 1}/${products.length}] ${item.name}`);
+
+    // 진행률 계산: 브랜드 단위 진척 + 상품 단위 세부 진척
+    const brandWeight = 100 / totalBrands;
+    const itemProgress = ((i + 1) / products.length) * brandWeight;
+    const overallPercent = Math.round((brandIdx * brandWeight) + itemProgress);
+
+    // 5건마다 Firestore 진행률 업데이트 (너무 빈번한 업데이트 방지)
+    if (i % 5 === 0 || i === products.length - 1) {
+      await updateProgress(
+        'running',
+        Math.min(overallPercent, 99),
+        `[${brandId}] ${i + 1}/${products.length} 상세 수집 중...`
+      );
+    }
+
+    // ★ 컴퓨존 상세 페이지는 광고/추적 요청이 계속 발생해 networkidle에 도달하지
+    //   못하는 경우가 많다(페이지는 정상 로드됨). 과거 networkidle 30초 대기 방식은
+    //   전체 상품의 ~45%가 components:[]로 저장되는 원인이었다.
+    //   → domcontentloaded로 이동 후 부품 테이블 셀렉터를 직접 대기하고,
+    //     goto가 실패해도 DOM 추출을 시도하며, 부품 0개면 최대 3회 재시도한다.
+    const MAX_ATTEMPTS = 3;
+    let components = [];
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        await page.goto(item.detailUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      } catch (e) {
+        console.log(`      ⚠ 페이지 이동 실패 (시도 ${attempt}/${MAX_ATTEMPTS}): ${e.message.split('\n')[0]}`);
+      }
+
+      await page.waitForSelector('div.recom_L table.table_style_recom tbody tr', { timeout: 15000 }).catch(() => {
+        console.log(`      ⚠ 부품 테이블 미발견 (${item.productNo}, 시도 ${attempt}/${MAX_ATTEMPTS})`);
+      });
+      await randomDelay(1500, 3000);
+
+      components = await extractComponentTable(page);
+      if (components.length > 0) break;
+
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`      ↻ 부품 0개 – 재시도 (${attempt}/${MAX_ATTEMPTS})`);
+        await randomDelay(3000, 6000);
+      }
+    }
+
+    item.components = components;
+    if (components.length > 0) {
+      console.log(`      → ${components.length}개 부품`);
+    } else {
+      console.log(`      ❌ ${MAX_ATTEMPTS}회 시도 후에도 부품 추출 실패 (${item.productNo})`);
     }
     await randomDelay(2000, 4000);
   }
@@ -578,11 +633,18 @@ async function saveToFirestore(products, brandId, todayStr) {
 
     for (const item of chunk) {
       const docRef = masterRef.collection(brandId).doc(item.productNo);
-      batch.set(docRef, {
+      const payload = {
         ...item,
         brand: brandId,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      };
+      // ★ 부품 추출에 실패한(빈 배열) 경우 components 필드를 아예 저장하지 않는다.
+      //   merge:true이므로 같은 날 재크롤링 시 기존에 정상 수집된 부품 구성을
+      //   빈 값으로 덮어쓰는 사고를 방지한다. (조회 측은 components 부재를 []로 처리)
+      if (Array.isArray(payload.components) && payload.components.length === 0) {
+        delete payload.components;
+      }
+      batch.set(docRef, payload, { merge: true });
     }
     await batch.commit();
     console.log(`    ✅ ${start + 1}~${start + chunk.length}번째 저장 완료`);
@@ -650,43 +712,50 @@ async function trackCompuzone() {
         continue;
       }
 
-      await updateProgress(
-        'running',
-        Math.round((brandIdx / activeBrands.length) * 100),
-        `[${brand.id}] 리스트 수집 중...`
-      );
+      try {
+        await updateProgress(
+          'running',
+          Math.round((brandIdx / activeBrands.length) * 100),
+          `[${brand.id}] 리스트 수집 중...`
+        );
 
-      // 1단계: 리스트 수집 (타입에 따라 분기)
-      let products;
-      if (brand.type === 'product_list') {
-        products = await scrapeProductListPages(page, brand);
-      } else {
-        products = await scrapeListPages(page, brand);
-      }
+        // 1단계: 리스트 수집 (타입에 따라 분기)
+        let products;
+        if (brand.type === 'product_list') {
+          products = await scrapeProductListPages(page, brand);
+        } else {
+          products = await scrapeListPages(page, brand);
+        }
 
-      if (products.length === 0) {
-        console.log(`  ⚠ [${brand.id}] 상품 0개 – 건너뜁니다.`);
+        if (products.length === 0) {
+          console.log(`  ⚠ [${brand.id}] 상품 0개 – 건너뜁니다.`);
+          continue;
+        }
+
+        // 2단계: 상세 부품 스크래핑 (recom 타입만 – 부품 리스트는 개별 상품이므로 불필요)
+        if (brand.type !== 'product_list') {
+          await scrapeDetailComponents(page, products, brand.id, brandIdx, activeBrands.length);
+        }
+
+        // 3단계: Firestore 저장
+        await saveToFirestore(products, brand.id, todayStr);
+
+        console.log(`\n  🏁 [${brand.id}] 완료! ${products.length}건 저장됨.`);
+
+        // 샘플 출력
+        if (brand.type === 'product_list') {
+          console.log(`\n  📋 [샘플] ${products[0].name}: ${Number(products[0].originalPrice).toLocaleString()}원`);
+        } else if ((products[0]?.components || []).length > 0) {
+          console.log(`\n  📋 [샘플] ${products[0].name}:`);
+          (products[0].components || []).forEach((c) => {
+            console.log(`    - [${c.type}] ${c.partName} | ${Number(c.partPrice).toLocaleString()}원 x ${c.quantity}`);
+          });
+        }
+      } catch (brandErr) {
+        // 한 브랜드에서 예기치 못한 오류가 나도 전체 크롤링을 멈추지 않고
+        // 이 브랜드만 건너뛴 뒤 다음 브랜드로 계속 진행한다.
+        console.log(`  ❌ [${brand.id}] 수집 중 오류 – 이 브랜드만 건너뛰고 계속 진행: ${brandErr.message}`);
         continue;
-      }
-
-      // 2단계: 상세 부품 스크래핑 (recom 타입만 – 부품 리스트는 개별 상품이므로 불필요)
-      if (brand.type !== 'product_list') {
-        await scrapeDetailComponents(page, products, brand.id, brandIdx, activeBrands.length);
-      }
-
-      // 3단계: Firestore 저장
-      await saveToFirestore(products, brand.id, todayStr);
-
-      console.log(`\n  🏁 [${brand.id}] 완료! ${products.length}건 저장됨.`);
-
-      // 샘플 출력
-      if (brand.type === 'product_list') {
-        console.log(`\n  📋 [샘플] ${products[0].name}: ${Number(products[0].originalPrice).toLocaleString()}원`);
-      } else if ((products[0]?.components || []).length > 0) {
-        console.log(`\n  📋 [샘플] ${products[0].name}:`);
-        (products[0].components || []).forEach((c) => {
-          console.log(`    - [${c.type}] ${c.partName} | ${Number(c.partPrice).toLocaleString()}원 x ${c.quantity}`);
-        });
       }
     }
 
