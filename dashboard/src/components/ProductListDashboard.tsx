@@ -4,12 +4,17 @@ import { useState, useMemo, useCallback } from 'react';
 import {
     Container, Title, Text, Stack, Group, Paper, Loader, Center,
     Table, TextInput, ActionIcon, Tooltip, Badge, Button, ScrollArea,
-    NumberFormatter, Modal
+    NumberFormatter, Modal, SegmentedControl
 } from '@mantine/core';
 import { IconExternalLink, IconSearch, IconDownload, IconLock } from '@tabler/icons-react';
 import { LineChart } from '@mantine/charts';
 import { useAvailableDates } from '@/hooks/useAvailableDates';
-import { useMultiDateProducts, ProductPriceRow } from '@/hooks/useMultiDateProducts';
+import { useMultiDateProducts, ProductPriceRow, PriceMode } from '@/hooks/useMultiDateProducts';
+
+// 가격 기준 토글: 딜러가(로그인 최저가) / 판매가(소비자 정가)
+const PRICE_MODE_LABEL: Record<PriceMode, string> = { dealer: '딜러가', sell: '판매가' };
+const getPriceMap = (row: ProductPriceRow, mode: PriceMode) =>
+    mode === 'sell' ? row.sellPrices : row.prices;
 import { useCrawlStatus } from '@/hooks/useCrawlStatus';
 import { CrawlButton } from './CrawlButton';
 
@@ -28,6 +33,7 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
 
     const [filterName, setFilterName] = useState('');
     const [modelNameWidth, setModelNameWidth] = useState(250);
+    const [priceMode, setPriceMode] = useState<PriceMode>('dealer');
 
     // 가격 그래프 모달
     const [modalOpened, setModalOpened] = useState(false);
@@ -72,8 +78,9 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
     // 가격 변동 색상
     const getPriceChange = (row: ProductPriceRow, dateIdx: number) => {
         if (dateIdx >= recentDates.length - 1) return null;
-        const currentPrice = row.prices[recentDates[dateIdx]];
-        const prevPrice = row.prices[recentDates[dateIdx + 1]];
+        const priceMap = getPriceMap(row, priceMode);
+        const currentPrice = priceMap[recentDates[dateIdx]];
+        const prevPrice = priceMap[recentDates[dateIdx + 1]];
         if (!currentPrice || !prevPrice) return null;
         const diff = currentPrice - prevPrice;
         if (diff > 0) return { color: 'red', symbol: '▲', diff };
@@ -90,30 +97,35 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
     // 그래프 데이터 생성
     const chartData = useMemo(() => {
         if (!selectedProduct) return [];
+        const priceMap = getPriceMap(selectedProduct, priceMode);
         return [...recentDates]
             .reverse() // 오래된 날짜부터
-            .filter((d) => selectedProduct.prices[d])
+            .filter((d) => priceMap[d])
             .map((d) => ({
                 date: d,
-                price: selectedProduct.prices[d],
+                price: priceMap[d],
             }));
-    }, [selectedProduct, recentDates]);
+    }, [selectedProduct, recentDates, priceMode]);
 
-    // 엑셀 다운로드
+    // 엑셀 다운로드: 딜러가 시트 + 판매가 시트
     const handleExcelDownload = useCallback(async () => {
         const XLSX = await import('xlsx');
-        const wsData = filteredRows.map((r) => {
-            const row: Record<string, any> = { '모델명': r.name };
-            recentDates.forEach((d) => {
-                row[d] = r.prices[d] || '';
+        const wb = XLSX.utils.book_new();
+
+        (['dealer', 'sell'] as PriceMode[]).forEach((mode) => {
+            const wsData = filteredRows.map((r) => {
+                const priceMap = getPriceMap(r, mode);
+                const row: Record<string, any> = { '모델명': r.name };
+                recentDates.forEach((d) => {
+                    row[d] = priceMap[d] || '';
+                });
+                row['링크'] = r.detailUrl || '';
+                return row;
             });
-            row['링크'] = r.detailUrl || '';
-            return row;
+            const ws = XLSX.utils.json_to_sheet(wsData);
+            XLSX.utils.book_append_sheet(wb, ws, `${brandLabel}_${PRICE_MODE_LABEL[mode]}`);
         });
 
-        const ws = XLSX.utils.json_to_sheet(wsData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, brandLabel);
         XLSX.writeFile(wb, `${brandLabel}_가격추이.xlsx`);
     }, [filteredRows, recentDates, brandLabel]);
 
@@ -173,6 +185,17 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                                 <Badge variant="light" color="blue" size="lg">
                                     {filteredRows.length} / {rows.length}
                                 </Badge>
+                                <Tooltip label="딜러가: 로그인 최저가 · 판매가: 소비자 정가">
+                                    <SegmentedControl
+                                        size="xs"
+                                        value={priceMode}
+                                        onChange={(v) => setPriceMode(v as PriceMode)}
+                                        data={[
+                                            { label: PRICE_MODE_LABEL.dealer, value: 'dealer' },
+                                            { label: PRICE_MODE_LABEL.sell, value: 'sell' },
+                                        ]}
+                                    />
+                                </Tooltip>
                                 <Tooltip label="엑셀 다운로드">
                                     <Button
                                         variant="light"
@@ -233,7 +256,7 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                                                 </Group>
                                             </Table.Td>
                                             {recentDates.map((d, idx) => {
-                                                const price = row.prices[d];
+                                                const price = getPriceMap(row, priceMode)[d];
                                                 const change = getPriceChange(row, idx);
                                                 return (
                                                     <Table.Td key={d} ta="right">
@@ -285,7 +308,7 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
             <Modal
                 opened={modalOpened}
                 onClose={() => { setModalOpened(false); setSelectedProduct(null); }}
-                title={<Text fw={700} size="lg">가격 변동 추이</Text>}
+                title={<Text fw={700} size="lg">가격 변동 추이 ({PRICE_MODE_LABEL[priceMode]})</Text>}
                 size="xl"
                 centered
             >
@@ -303,7 +326,7 @@ export function ProductListDashboard({ brandId, brandLabel }: ProductListDashboa
                             h={350}
                             data={chartData}
                             dataKey="date"
-                            series={[{ name: 'price', label: '판매가', color: 'blue.6' }]}
+                            series={[{ name: 'price', label: PRICE_MODE_LABEL[priceMode], color: 'blue.6' }]}
                             curveType="monotone"
                             connectNulls
                             withLegend
