@@ -238,23 +238,32 @@ async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
       let originalPrice = 0;
       let discountPrice = 0;
 
-      if (priceDiv) {
-        // 판매가: data-price
-        const sellPrice = Number((priceDiv.getAttribute('data-price') || '0').replace(/[^0-9]/g, '')) || 0;
-        // 맞춤가: data-customprice
-        const customPrice = Number((priceDiv.getAttribute('data-customprice') || '0').replace(/[^0-9]/g, '')) || 0;
+      // ★ 가격 종류별 개별 필드 (대시보드에서 딜러가/판매가 전환 표시용)
+      //   sellPrice   : 소비자 판매가(정가)      ← data-price
+      //   promoPrice  : 소비자 할인가            ← data-discountprice
+      //   dealerPrice : 딜러가(맞춤가, 로그인 시) ← data-customprice
+      //   couponPrice : 쿠폰적용가               ← .price_Layer .sum dd
+      let sellPrice = 0;
+      let promoPrice = 0;
+      let dealerPrice = 0;
+      let couponPrice = 0;
 
-        originalPrice = sellPrice || customPrice; // 판매가(정가)
+      if (priceDiv) {
+        const num = (attr) => Number((priceDiv.getAttribute(attr) || '0').replace(/[^0-9]/g, '')) || 0;
+        sellPrice = num('data-price');
+        promoPrice = num('data-discountprice');
+        dealerPrice = num('data-customprice');
+
+        originalPrice = sellPrice || dealerPrice; // 판매가(정가)
 
         // 쿠폰적용가: .price_Layer .sum dd 에서 추출
-        let couponPrice = 0;
         const couponEl = item.querySelector('.price_Layer .sum dd, .prc_guide_ly .sum dd');
         if (couponEl) {
           couponPrice = Number((couponEl.innerText || '').replace(/[^0-9]/g, '')) || 0;
         }
 
-        // 판매가 / 맞춤가 / 쿠폰적용가 중 0이 아닌 최저가를 discountPrice로
-        const candidates = [sellPrice, customPrice, couponPrice].filter(p => p > 0);
+        // 판매가 / 맞춤가 / 쿠폰적용가 중 0이 아닌 최저가를 discountPrice로 (기존 동작 유지)
+        const candidates = [sellPrice, dealerPrice, couponPrice].filter(p => p > 0);
         discountPrice = candidates.length > 0 ? Math.min(...candidates) : 0;
       }
 
@@ -262,6 +271,7 @@ async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
       if (originalPrice === 0 && discountPrice === 0) {
         const priceEl = item.querySelector('strong.number');
         originalPrice = Number((priceEl ? priceEl.innerText : '').replace(/[^0-9]/g, '')) || 0;
+        sellPrice = originalPrice;
       }
 
       const linkEl = item.querySelector('a[href*="product_detail"]');
@@ -292,7 +302,11 @@ async function extractProductsOnPage(page, mediumDivNo, bigDivNo) {
         itemText.includes('입고예정일')
       );
 
-      return { productNo: pNo, name, originalPrice, discountPrice, detailUrl, specText, soldOut, components: [] };
+      return {
+        productNo: pNo, name, originalPrice, discountPrice,
+        sellPrice, promoPrice, dealerPrice, couponPrice,
+        detailUrl, specText, soldOut, components: [],
+      };
     }).filter(Boolean);
   }, { divNo: mediumDivNo, bigDiv: bigDivNo });
 }
@@ -744,7 +758,10 @@ async function trackCompuzone() {
 
         // 샘플 출력
         if (brand.type === 'product_list') {
-          console.log(`\n  📋 [샘플] ${products[0].name}: ${Number(products[0].originalPrice).toLocaleString()}원`);
+          const s = products[0];
+          const won = (v) => `${Number(v || 0).toLocaleString()}원`;
+          console.log(`\n  📋 [샘플] ${s.name}`);
+          console.log(`    판매가 ${won(s.sellPrice)} | 할인가 ${won(s.promoPrice)} | 딜러가 ${won(s.dealerPrice)} | 쿠폰가 ${won(s.couponPrice)} → 저장 discountPrice ${won(s.discountPrice)}`);
         } else if ((products[0]?.components || []).length > 0) {
           console.log(`\n  📋 [샘플] ${products[0].name}:`);
           (products[0].components || []).forEach((c) => {

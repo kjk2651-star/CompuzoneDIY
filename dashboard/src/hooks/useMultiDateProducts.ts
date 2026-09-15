@@ -9,8 +9,11 @@ export interface ProductPriceRow {
     name: string;
     detailUrl: string;
     soldOut: boolean;
-    prices: Record<string, number>; // { '2026-03-10': 350000, '2026-03-09': 355000, ... }
+    prices: Record<string, number>; // 딜러가(최저가) { '2026-03-10': 350000, '2026-03-09': 355000, ... }
+    sellPrices: Record<string, number>; // 소비자 판매가 { '2026-03-10': 380000, ... }
 }
+
+export type PriceMode = 'dealer' | 'sell';
 
 /**
  * 여러 날짜에 걸쳐 모든 상품의 가격을 조회하여 피벗 테이블 형태로 반환.
@@ -38,7 +41,10 @@ export function useMultiDateProducts(brandId: string, availableDates: string[]) 
                     snapshot.docs.forEach((doc) => {
                         const data = doc.data();
                         const productNo = data.productNo || doc.id;
+                        // 딜러가: 크롤러가 판매가/딜러가/쿠폰가 중 최저값으로 저장한 discountPrice
                         const price = Number(data.discountPrice || data.originalPrice || 0);
+                        // 판매가: 신규 필드 sellPrice, 없으면(과거 데이터) originalPrice로 대체
+                        const sellPrice = Number(data.sellPrice ?? data.originalPrice ?? 0);
 
                         if (!productMap.has(productNo)) {
                             productMap.set(productNo, {
@@ -47,6 +53,7 @@ export function useMultiDateProducts(brandId: string, availableDates: string[]) 
                                 detailUrl: data.detailUrl || '',
                                 soldOut: false,
                                 prices: {},
+                                sellPrices: {},
                             });
                         }
 
@@ -56,6 +63,7 @@ export function useMultiDateProducts(brandId: string, availableDates: string[]) 
                         if (data.detailUrl) row.detailUrl = data.detailUrl;
                         if (data.soldOut !== undefined) row.soldOut = !!data.soldOut;
                         if (price > 0) row.prices[date] = price;
+                        if (sellPrice > 0) row.sellPrices[date] = sellPrice;
                     });
                 } catch (e) {
                     // 해당 날짜에 데이터 없으면 무시
