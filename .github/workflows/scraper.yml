@@ -26,7 +26,11 @@ concurrency:
 
 jobs:
   scrape-and-save:
-    runs-on: ubuntu-latest
+    # 컴퓨존이 GitHub(미국) 서버 접속을 자주 차단해서 사무실 PC(한국, Windows)의
+    # 셀프호스트 러너에서 실행한다. PC가 꺼져 있으면 작업은 PC가 켜질 때까지 대기한다.
+    # ⚠ 공개 저장소라 pull_request 트리거를 절대 추가하지 말 것 (외부인이 PC에서 코드 실행 가능)
+    runs-on: [self-hosted, windows, compuzone]
+    timeout-minutes: 150
 
     steps:
       - name: Checkout Repository
@@ -39,9 +43,10 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
+        shell: cmd
         run: |
-          npm install playwright firebase-admin
-          npx playwright install chromium --with-deps
+          call npm install playwright firebase-admin || exit /b 1
+          call npx playwright install chromium || exit /b 1
 
       - name: Run Scraper
         env:
@@ -50,4 +55,5 @@ jobs:
           COMPUZONE_PW: ${{ secrets.COMPUZONE_PW }}
           CRAWL_BRAND: ${{ github.event.inputs.brand }}
           RESUME_TODAY: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+        shell: cmd
         run: node crawler.js
